@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IFC Clash Detection</title>
+    <link rel="stylesheet" href="/style.css" />
+</head>
+
+<body>
+    <div class="container">
+        <h1>IFC Clash Detection</h1>
+        <button id="health">Check API Health</button>
+        <pre id="out"></pre>
+
+        <h2>Upload IFC Files</h2>
+        <input id="files" type="file" multiple accept=".ifc" />
+        <textarea id="sets" rows="6" placeholder='[{"name":"Set A","a":[{"file":"file.ifc"}]}]'></textarea>
+        <button id="run">Run Clash Detection</button>
+    </div>
+
+    <script>
+        const out = document.getElementById('out');
+        const log = (v) => (out.textContent = JSON.stringify(v, null, 2));
+
+        document.getElementById('health').onclick = async () => {
+            const r = await fetch('/api/health');
+            log(await r.json());
+        };
+
+        document.getElementById('run').onclick = async () => {
+            const files = document.getElementById('files').files;
+            const sets = document.getElementById('sets').value;
+            const fd = new FormData();
+            for (const f of files) fd.append('files', f);
+            fd.append('clash_sets', sets || '[]');
+            const r = await fetch('/api/clash-detection', { method: 'POST', body: fd });
+            log(await r.json());
+        };
+    </script>
+</body>
+
+</html>

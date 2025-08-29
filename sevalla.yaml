@@ -1,41 +1,15 @@
-# Sevalla configuration for IFC Clash Detection
 version: '1'
 
 services:
-  - name: ifcclash-frontend
-    type: static
-    buildCommand: "npm ci && npm run build && npm run export"
-    publishDir: "out"
-    healthCheckPath: "/"
-
-  - name: ifcclash-api
+  - name: ifcclash
     type: web
     runtime: docker
-    buildCommand: "docker build -t ifcclash-api ."
+    buildCommand: "docker build -t ifcclash ."
     healthCheckPath: "/api/health"
     envVars:
       - key: FLASK_ENV
-        value: "production"
+        value: production
       - key: PORT
         value: "8080"
 
-# Pipeline for Dev/QA/Prod environments
-pipelines:
-  - name: ifcclash-pipeline
-    environments:
-      - name: development
-        services: [ifcclash-frontend, ifcclash-api]
-      - name: production
-        services: [ifcclash-frontend, ifcclash-api]
 
-# Route API traffic to the API service
-routes:
-  - src: "/api/(.*)"
-    dest: "/$1"
-    service: ifcclash-api
-
-# Optional: Add database for storing clash results
-databases:
-  - name: ifcclash-db
-    type: postgresql
-    version: "15"
