@@ -104,6 +104,13 @@ def clash_detection():
                 s['a'] = rewrite_sources(s.get('a'))
             if 'b' in s:
                 s['b'] = rewrite_sources(s.get('b'))
+            
+            # For within-group analysis (no Group B), ensure both sides use same selector
+            # This prevents ifcclash from comparing selected elements against ALL elements
+            if not s.get('b') or len(s.get('b', [])) == 0:
+                # Copy Group A configuration to Group B for within-group analysis
+                if s.get('a'):
+                    s['b'] = s['a'].copy()  # Same sources for both groups
             # Set required mode and parameters for IfcClash 0.8.3
             # ifcclash only supports: collision, intersection, clearance
             if 'mode' not in s:
