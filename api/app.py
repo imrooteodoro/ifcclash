@@ -88,12 +88,23 @@ def clash_detection():
             if 'b' in s:
                 s['b'] = rewrite_sources(s.get('b'))
             # Set required mode and parameters for IfcClash 0.8.3
+            # ifcclash only supports: collision, intersection, clearance
             if 'mode' not in s:
-                # Auto-detect mode based on group configuration
-                if s.get('b') and len(s.get('a', [])) > 0:
-                    s['mode'] = 'between_groups'  # Between different groups
-                else:
-                    s['mode'] = 'within_groups'   # Within the same group
+                s['mode'] = 'collision'  # Default to collision mode
+
+            # Map UI modes to actual ifcclash modes
+            ui_mode = s.get('mode')
+            if ui_mode in ['within_groups', 'between_groups']:
+                # Both within_groups and between_groups use collision mode in ifcclash
+                # The difference is determined by group configuration
+                s['mode'] = 'collision'
+            elif ui_mode == 'intersection':
+                s['mode'] = 'intersection'
+            elif ui_mode == 'clearance':
+                s['mode'] = 'clearance'
+            else:
+                # Default to collision for any unrecognized mode
+                s['mode'] = 'collision'
 
             # Configure mode-specific parameters
             if s['mode'] == 'collision' and 'allow_touching' not in s:
@@ -103,10 +114,6 @@ def clash_detection():
                 s['check_all'] = True
             elif s['mode'] == 'clearance' and ('clearance' not in s or 'check_all' not in s):
                 s['clearance'] = 0.01
-                s['check_all'] = True
-            elif s['mode'] == 'within_groups' and 'check_all' not in s:
-                s['check_all'] = True
-            elif s['mode'] == 'between_groups' and 'check_all' not in s:
                 s['check_all'] = True
 
         # Validate labels before running

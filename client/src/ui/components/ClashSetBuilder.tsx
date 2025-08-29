@@ -11,7 +11,7 @@ export type ClashSet = {
     name: string
     a: ClashSource[]
     b?: ClashSource[]
-    mode?: 'collision' | 'intersection' | 'clearance' | 'within_groups' | 'between_groups'
+    mode?: 'collision' | 'intersection' | 'clearance'
     allow_touching?: boolean
     tolerance?: number
     clearance?: number
@@ -24,14 +24,14 @@ const PRESETS = {
         name: 'Structural vs MEP',
         a: [{ file: '', entityTypes: ['IfcWall', 'IfcColumn', 'IfcBeam', 'IfcSlab'] }],
         b: [{ file: '', entityTypes: ['IfcPipe', 'IfcDuct', 'IfcCableCarrier'] }],
-        mode: 'between_groups' as const,
+        mode: 'collision' as const,
         allow_touching: false
     },
     'mep-mep': {
         name: 'MEP vs MEP',
         a: [{ file: '', entityTypes: ['IfcPipe'] }],
         b: [{ file: '', entityTypes: ['IfcDuct', 'IfcCableCarrier'] }],
-        mode: 'between_groups' as const,
+        mode: 'collision' as const,
         allow_touching: false
     },
     'architectural-structural': {
@@ -53,14 +53,14 @@ const PRESETS = {
     'within-structural': {
         name: 'Within Structural',
         a: [{ file: '', entityTypes: ['IfcBeam', 'IfcColumn', 'IfcSlab'] }],
-        mode: 'within_groups' as const,
-        check_all: true
+        mode: 'collision' as const,
+        allow_touching: false
     },
     'mep-routing': {
         name: 'MEP Routing Analysis',
         a: [{ file: '', entityTypes: ['IfcPipe', 'IfcDuct', 'IfcCableCarrier'] }],
-        mode: 'within_groups' as const,
-        check_all: true
+        mode: 'collision' as const,
+        allow_touching: false
     },
     'collision-only': {
         name: 'Hard Collision Check',
@@ -107,7 +107,7 @@ type Props = {
 export default function ClashSetBuilder({ files, value, onChange }: Props) {
     const [activeTab, setActiveTab] = useState<'builder' | 'presets'>('builder')
     const [expandedSet, setExpandedSet] = useState<number | null>(null)
-    const [showEntitySelector, setShowEntitySelector] = useState<{setIdx: number, group: 'a' | 'b', sourceIdx: number} | null>(null)
+    const [showEntitySelector, setShowEntitySelector] = useState<{ setIdx: number, group: 'a' | 'b', sourceIdx: number } | null>(null)
 
     const fileOptions = files.map(f => f.name)
 
@@ -355,15 +355,15 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                 cursor: 'pointer',
                                 transition: 'all 0.2s'
                             }}
-                            onClick={() => applyPreset(key as keyof typeof PRESETS)}
-                            onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                            onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                                onClick={() => applyPreset(key as keyof typeof PRESETS)}
+                                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
                             >
                                 <h4 style={{ margin: '0 0 8px 0', color: '#1e293b' }}>{preset.name}</h4>
                                 <p style={{ margin: 0, color: '#64748b', fontSize: '0.875rem' }}>
                                     {preset.a[0].entityTypes?.slice(0, 3).join(', ')}
                                     {preset.a[0].entityTypes && preset.a[0].entityTypes.length > 3 ? '...' : ''}
-                                    {' vs '}
+                                    {preset.b ? ' vs ' : ' analysis'}
                                     {preset.b?.[0].entityTypes?.slice(0, 3).join(', ')}
                                     {preset.b?.[0].entityTypes && preset.b[0].entityTypes.length > 3 ? '...' : ''}
                                 </p>
@@ -512,38 +512,24 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                             {[
                                                 {
                                                     value: 'collision',
-                                                    label: 'Collision',
-                                                    desc: 'Detect overlapping elements',
+                                                    label: 'Collision Detection',
+                                                    desc: 'Hard intersection detection',
                                                     icon: '💥',
-                                                    details: 'Find elements that physically intersect or overlap'
+                                                    details: 'Finds elements that physically occupy the same 3D space. Most restrictive but fastest detection method.'
                                                 },
                                                 {
                                                     value: 'intersection',
-                                                    label: 'Intersection',
-                                                    desc: 'Detect element intersections',
+                                                    label: 'Intersection Analysis',
+                                                    desc: 'Tolerance-based detection',
                                                     icon: '🔄',
-                                                    details: 'Find elements that cross each other within tolerance'
+                                                    details: 'Finds elements that cross each other within a specified tolerance distance. Good for MEP routing analysis.'
                                                 },
                                                 {
                                                     value: 'clearance',
-                                                    label: 'Clearance',
-                                                    desc: 'Check minimum clearances',
+                                                    label: 'Clearance Verification',
+                                                    desc: 'Minimum spacing requirements',
                                                     icon: '📏',
-                                                    details: 'Verify minimum spacing requirements between elements'
-                                                },
-                                                {
-                                                    value: 'within_groups',
-                                                    label: 'Within Groups',
-                                                    desc: 'Check clashes within the same group',
-                                                    icon: '🔍',
-                                                    details: 'Auto-selected when only Group A is configured'
-                                                },
-                                                {
-                                                    value: 'between_groups',
-                                                    label: 'Between Groups',
-                                                    desc: 'Check clashes between different groups',
-                                                    icon: '⚖️',
-                                                    details: 'Auto-selected when both Group A and B are configured'
+                                                    details: 'Ensures minimum clearance distances between elements. Critical for safety and accessibility compliance.'
                                                 }
                                             ].map(mode => (
                                                 <label key={mode.value} style={{
@@ -557,18 +543,18 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                     transition: 'all 0.2s',
                                                     position: 'relative'
                                                 }}
-                                                onMouseEnter={(e) => {
-                                                    if (cs.mode !== mode.value) {
-                                                        e.currentTarget.style.borderColor = '#93c5fd';
-                                                        e.currentTarget.style.background = '#f0f9ff';
-                                                    }
-                                                }}
-                                                onMouseLeave={(e) => {
-                                                    if (cs.mode !== mode.value) {
-                                                        e.currentTarget.style.borderColor = '#e2e8f0';
-                                                        e.currentTarget.style.background = 'white';
-                                                    }
-                                                }}
+                                                    onMouseEnter={(e) => {
+                                                        if (cs.mode !== mode.value) {
+                                                            e.currentTarget.style.borderColor = '#93c5fd';
+                                                            e.currentTarget.style.background = '#f0f9ff';
+                                                        }
+                                                    }}
+                                                    onMouseLeave={(e) => {
+                                                        if (cs.mode !== mode.value) {
+                                                            e.currentTarget.style.borderColor = '#e2e8f0';
+                                                            e.currentTarget.style.background = 'white';
+                                                        }
+                                                    }}
                                                 >
                                                     <input
                                                         type="radio"
@@ -626,15 +612,11 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                     {cs.mode === 'collision' && '💥 Collision Detection'}
                                                     {cs.mode === 'intersection' && '🔄 Intersection Detection'}
                                                     {cs.mode === 'clearance' && '📏 Clearance Analysis'}
-                                                    {cs.mode === 'within_groups' && '🔍 Within-Group Analysis'}
-                                                    {cs.mode === 'between_groups' && '⚖️ Between-Group Analysis'}
                                                 </div>
                                                 <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                                    {cs.mode === 'collision' && 'Finds elements that physically occupy the same space. Best for detecting construction conflicts.'}
-                                                    {cs.mode === 'intersection' && 'Finds elements that cross each other within a specified tolerance. Useful for MEP routing analysis.'}
-                                                    {cs.mode === 'clearance' && 'Ensures minimum spacing requirements are met between elements. Critical for safety and accessibility.'}
-                                                    {cs.mode === 'within_groups' && 'Analyzes clashes between elements within the same IFC file or group. Use when comparing similar elements.'}
-                                                    {cs.mode === 'between_groups' && 'Analyzes clashes between elements from different IFC files or groups. Use for interdisciplinary coordination.'}
+                                                    {cs.mode === 'collision' && 'Finds elements that physically occupy the same 3D space. Best for detecting hard construction conflicts.'}
+                                                    {cs.mode === 'intersection' && 'Finds elements that cross each other within tolerance. Useful for MEP routing and coordination analysis.'}
+                                                    {cs.mode === 'clearance' && 'Ensures minimum spacing requirements are met. Critical for safety, accessibility, and code compliance.'}
                                                 </div>
                                             </div>
                                         )}
@@ -725,7 +707,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                         </div>
                                                     )}
 
-                                                    {(cs.mode === 'within_groups' || cs.mode === 'between_groups' || cs.mode === 'intersection' || cs.mode === 'clearance') && (
+                                                    {cs.mode && (
                                                         <div style={{ padding: 12, background: 'white', borderRadius: 6, border: '1px solid #e2e8f0' }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                                                                 <span style={{ fontSize: '1rem' }}>🔍</span>
@@ -762,15 +744,33 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                         <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#92400e' }}>Performance Tip</span>
                                                     </div>
                                                     <div style={{ fontSize: '0.75rem', color: '#92400e' }}>
-                                                        {cs.mode === 'collision' && 'Collision detection is fastest but most restrictive. Use for critical conflicts.'}
-                                                        {cs.mode === 'intersection' && 'Intersection detection with small tolerance (0.01m) balances speed and thoroughness.'}
-                                                        {cs.mode === 'clearance' && 'Clearance analysis is most thorough but slowest. Use for final validation.'}
-                                                        {(cs.mode === 'within_groups' || cs.mode === 'between_groups') && 'Group analysis is comprehensive but can be slow with many elements. Consider using entity type filtering.'}
+                                                        {cs.mode === 'collision' && 'Collision detection is fastest but most restrictive. Use for critical construction conflicts.'}
+                                                        {cs.mode === 'intersection' && 'Intersection detection with small tolerance (0.01m) balances speed and thoroughness for coordination.'}
+                                                        {cs.mode === 'clearance' && 'Clearance analysis is most thorough but slowest. Use for final safety and accessibility validation.'}
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
                                     )}
+
+                                    {/* Group Configuration Guide */}
+                                    <div style={{
+                                        marginBottom: 20,
+                                        padding: 16,
+                                        background: '#f0f9ff',
+                                        borderRadius: 8,
+                                        border: '1px solid #0ea5e9'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                            <span style={{ fontSize: '1rem' }}>📋</span>
+                                            <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#0c4a6e' }}>Group Configuration</span>
+                                        </div>
+                                        <div style={{ fontSize: '0.75rem', color: '#075985', lineHeight: '1.5' }}>
+                                            <strong>Group A:</strong> Primary elements to check for clashes<br />
+                                            <strong>Group B:</strong> Secondary elements (optional). If configured, checks clashes <em>between</em> Group A and Group B. If not configured, checks clashes <em>within</em> Group A only.<br />
+                                            <em>Example: To check clashes between structural beams and MEP pipes, put beams in Group A and pipes in Group B.</em>
+                                        </div>
+                                    </div>
 
                                     {/* Group Configuration */}
                                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
