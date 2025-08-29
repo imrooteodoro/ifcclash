@@ -87,6 +87,10 @@ def clash_detection():
                 s['a'] = rewrite_sources(s.get('a'))
             if 'b' in s:
                 s['b'] = rewrite_sources(s.get('b'))
+            # Provide a sensible default for clash mode expected by IfcClash
+            # If two groups are defined, default to between-group clash; otherwise within-group
+            if 'mode' not in s:
+                s['mode'] = 'between' if s.get('b') else 'within'
 
         # Validate labels before running
         if unknown_labels:
