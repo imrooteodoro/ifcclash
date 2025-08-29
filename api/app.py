@@ -91,8 +91,11 @@ def clash_detection():
 
                 # Keep include/exclude as compact flags expected by ifcclash ('i'|'e')
                 # If anything else is provided, drop it to avoid confusing the CLI
-                if 'mode' in src and src['mode'] not in ('i', 'e'):
-                    src.pop('mode', None)
+                if 'mode' in src:
+                    if src['mode'] not in ('i', 'e'):
+                        src.pop('mode', None)
+                    # Ensure we keep the compact form, not expanded words
+                    # ifcclash expects 'i' and 'e', not 'include'/'exclude'
                 out.append(src)
             return out
 
