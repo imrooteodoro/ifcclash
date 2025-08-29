@@ -57,14 +57,24 @@ def clash_detection():
         except json.JSONDecodeError:
             return jsonify({"success": False, "error": "Invalid clash_sets JSON"}), 400
 
+        unknown_labels = set()
+
         def rewrite_sources(sources):
             out = []
             for src in sources or []:
                 src = dict(src)
-                if 'file' in src:
-                    label = src['file']
+                label = src.get('file')
+                if label:
                     if label in name_to_path:
                         src['file'] = name_to_path[label]
+                    else:
+                        unknown_labels.add(label)
+                else:
+                    # If only one file uploaded, auto-bind when label missing
+                    if len(name_to_path) == 1:
+                        src['file'] = next(iter(name_to_path.values()))
+                    else:
+                        unknown_labels.add('(missing)')
                 out.append(src)
             return out
 
@@ -73,6 +83,15 @@ def clash_detection():
                 s['a'] = rewrite_sources(s.get('a'))
             if 'b' in s:
                 s['b'] = rewrite_sources(s.get('b'))
+
+        # Validate labels before running
+        if unknown_labels:
+            return jsonify({
+                "success": False,
+                "error": "One or more clash source 'file' labels did not match uploaded files",
+                "unknown_labels": sorted(unknown_labels),
+                "uploaded_files": sorted(name_to_path.keys())
+            }), 400
 
         # Run IfcClash via CLI (python -m ifcclash <input_json> -o <output>)
         out_path = tempfile.mktemp(suffix='.json', dir='/tmp')

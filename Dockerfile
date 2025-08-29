@@ -5,15 +5,19 @@ RUN npm install --no-audit --no-fund
 COPY client/ .
 RUN npm run build
 
-FROM aecgeeks/ifcopenshell:latest
+FROM python:3.11-slim
+
+# System deps for ifcopenshell (GEOS/GDAL often required)
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libgeos-dev \
+    libgdal-dev \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-RUN python3 -m ensurepip --upgrade || true
-
 COPY requirements.txt .
-RUN python3 -m pip install --no-cache-dir --upgrade pip && \
-    python3 -m pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY api/ ./api/
 COPY --from=ui /ui/../static ./static
