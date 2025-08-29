@@ -110,7 +110,9 @@ def clash_detection():
             if not s.get('b') or len(s.get('b', [])) == 0:
                 # Copy Group A configuration to Group B for within-group analysis
                 if s.get('a'):
-                    s['b'] = s['a'].copy()  # Same sources for both groups
+                    import copy
+                    s['b'] = copy.deepcopy(s['a'])  # Deep copy to avoid reference issues
+                    logger.info(f"Within-group analysis: copied Group A to Group B for precise filtering")
             # Set required mode and parameters for IfcClash 0.8.3
             # ifcclash only supports: collision, intersection, clearance
             if 'mode' not in s:
@@ -162,7 +164,9 @@ def clash_detection():
         with open(in_path, 'w') as fh:
             json.dump(clash_sets, fh)
 
+        # Log the exact configuration being sent to ifcclash for debugging
         logger.info(f"Executing IfcClash CLI with {len(clash_sets)} sets → {out_path}")
+        logger.info(f"IfcClash input configuration: {json.dumps(clash_sets, indent=2)}")
         cmd = [sys.executable, '-m', 'ifcclash', in_path, '-o', out_path]
         proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         if proc.returncode != 0:
