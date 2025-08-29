@@ -93,7 +93,7 @@ export function ClashResults({ results }: ClashResultsProps) {
                     {/* Severity Filter */}
                     <select
                         value={filterSeverity}
-                        onChange={(e) => setFilterSeverity(e.target.value as any)}
+                        onChange={(e) => setFilterSeverity(e.target.value as 'all' | 'High' | 'Medium' | 'Low')}
                         className="text-sm border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
                     >
                         <option value="all">All Severities</option>

@@ -73,7 +73,7 @@ export default function Home() {
             ? 'API is running in mock mode for UI testing'
             : 'API is running but IfcClash library is not available'
       });
-    } catch (err) {
+    } catch {
       setApiStatus({
         available: false,
         ifcclash_available: false,
