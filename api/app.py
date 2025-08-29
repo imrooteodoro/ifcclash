@@ -79,6 +79,19 @@ def clash_detection():
                         src['file'] = next(iter(name_to_path.values()))
                     else:
                         unknown_labels.add('(missing)')
+
+                # Map UI field entityTypes -> selector string understood by ifcclash
+                # If a custom selector is already provided, prefer it
+                entity_types = src.pop('entityTypes', None)
+                if entity_types and not src.get('selector'):
+                    # Filter out empty strings and join by comma
+                    cleaned = [t for t in entity_types if isinstance(t, str) and t.strip()]
+                    if cleaned:
+                        src['selector'] = ','.join(cleaned)
+
+                # Map include/exclude mode from UI ('i'|'e') to ifcclash semantics
+                if 'mode' in src and src['mode'] in ('i', 'e'):
+                    src['mode'] = 'include' if src['mode'] == 'i' else 'exclude'
                 out.append(src)
             return out
 
