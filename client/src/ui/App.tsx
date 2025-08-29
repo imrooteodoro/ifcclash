@@ -8,21 +8,21 @@ import ClashSetBuilder, { ClashSet } from './components/ClashSetBuilder'
 const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ''
 
 export default function App() {
-    const [activeTab, setActiveTab] = useState<'upload' | 'configure' | 'results'>('upload')
-    const [apiStatus, setApiStatus] = useState<null | {
+    const [activeTab, setActiveTab] = useState('upload' as 'upload' | 'configure' | 'results')
+    const [apiStatus, setApiStatus] = useState(null as null | {
         available: boolean
         ifcclash_available: boolean
         capabilities?: string[]
         fallback_mode?: boolean
         message: string
-    }>(null)
-    const [files, setFiles] = useState<File[]>([])
+    })
+    const [files, setFiles] = useState([] as File[])
     const [setsText, setSetsText] = useState('')
-    const [result, setResult] = useState<any>(null)
-    const [sets, setSets] = useState<ClashSet[]>([])
-    const [error, setError] = useState<string | null>(null)
+    const [result, setResult] = useState(null as any)
+    const [sets, setSets] = useState([] as ClashSet[])
+    const [error, setError] = useState(null as string | null)
     const [isRunning, setIsRunning] = useState(false)
-    const [progress, setProgress] = useState<{ stage: string; progress: number } | null>(null)
+    const [progress, setProgress] = useState(null as { stage: string; progress: number } | null)
 
     const checkHealth = useCallback(async () => {
         setError(null)

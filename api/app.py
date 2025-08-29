@@ -89,9 +89,10 @@ def clash_detection():
                     if cleaned:
                         src['selector'] = ','.join(cleaned)
 
-                # Map include/exclude mode from UI ('i'|'e') to ifcclash semantics
-                if 'mode' in src and src['mode'] in ('i', 'e'):
-                    src['mode'] = 'include' if src['mode'] == 'i' else 'exclude'
+                # Keep include/exclude as compact flags expected by ifcclash ('i'|'e')
+                # If anything else is provided, drop it to avoid confusing the CLI
+                if 'mode' in src and src['mode'] not in ('i', 'e'):
+                    src.pop('mode', None)
                 out.append(src)
             return out
 
@@ -119,15 +120,22 @@ def clash_detection():
                 # Default to collision for any unrecognized mode
                 s['mode'] = 'collision'
 
-            # Configure mode-specific parameters
-            if s['mode'] == 'collision' and 'allow_touching' not in s:
-                s['allow_touching'] = False
-            elif s['mode'] == 'intersection' and ('tolerance' not in s or 'check_all' not in s):
-                s['tolerance'] = 0.01
-                s['check_all'] = True
-            elif s['mode'] == 'clearance' and ('clearance' not in s or 'check_all' not in s):
-                s['clearance'] = 0.01
-                s['check_all'] = True
+            # Configure mode-specific parameters from UI, preserving explicit user input
+            if s['mode'] == 'collision':
+                # allow_touching defaults to False unless explicitly set True in UI
+                if 'allow_touching' not in s:
+                    s['allow_touching'] = False
+            elif s['mode'] == 'intersection':
+                # tolerance and check_all can be set by UI; otherwise provide sane defaults
+                if 'tolerance' not in s:
+                    s['tolerance'] = 0.01
+                if 'check_all' not in s:
+                    s['check_all'] = True
+            elif s['mode'] == 'clearance':
+                if 'clearance' not in s:
+                    s['clearance'] = 0.01
+                if 'check_all' not in s:
+                    s['check_all'] = True
 
         # Validate labels before running
         if unknown_labels:
