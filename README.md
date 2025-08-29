@@ -10,13 +10,13 @@ python api/app.py
 # open http://localhost:8080
 ```
 
-## Deploy on Sevalla
+## Deploy on Sevalla (Nixpacks)
 - Connect repo
-- Service type: Docker (auto)
+- Ensure Procfile exists
 - Health check: /api/health
 
 ## Notes
-- ifcopenshell pinned to 0.7.0 (stable manylinux)
-- Python 3.10 base image for compatibility
+- ifcopenshell/ifcclash pinned to 0.8.3.post1
+- Python 3.10 recommended for maximum wheel compatibility
 
 

@@ -1,8 +1,8 @@
 Flask==2.3.3
 Flask-CORS==4.0.0
 gunicorn==21.2.0
-ifcopenshell==0.8.3.post1
-ifcclash==0.8.3.post1
+ifcopenshell==0.8.0
+ifcclash==0.8.3
 numpy==1.24.3
 python-multipart==0.0.6
 werkzeug==2.3.7
