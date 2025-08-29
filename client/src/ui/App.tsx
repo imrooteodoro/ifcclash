@@ -3,6 +3,7 @@ import ApiStatus from './components/ApiStatus'
 import FileUpload from './components/FileUpload'
 import ClashConfiguration from './components/ClashConfiguration'
 import ClashResults from './components/ClashResults'
+import ClashSetBuilder, { ClashSet } from './components/ClashSetBuilder'
 
 type ClashSource = { file: string; selector?: string; mode?: 'i' | 'e' }
 type ClashSet = { name: string; a: ClashSource[]; b?: ClashSource[] }
@@ -20,6 +21,7 @@ export default function App() {
     const [files, setFiles] = useState<File[]>([])
     const [setsText, setSetsText] = useState('[{"name":"Set A","a":[{"file":"file.ifc"}]}]')
     const [result, setResult] = useState<any>(null)
+    const [sets, setSets] = useState<ClashSet[]>([])
     const [error, setError] = useState<string | null>(null)
 
     const checkHealth = useCallback(async () => {
@@ -58,7 +60,8 @@ export default function App() {
         setResult(null)
         const fd = new FormData()
         files.forEach(f => fd.append('files', f))
-        fd.append('clash_sets', setsText || '[]')
+        const payload = sets.length ? sets : JSON.parse(setsText || '[]')
+        fd.append('clash_sets', JSON.stringify(payload))
         try {
             const r = await fetch(`${apiBase}/api/clash-detection`, { method: 'POST', body: fd })
             setResult(await r.json())
@@ -81,6 +84,9 @@ export default function App() {
                     <ClashConfiguration clashSetsText={setsText} onChange={setSetsText} />
                 </div>
             </section>
+            <div style={{ marginTop: 12 }}>
+                <ClashSetBuilder files={files} value={sets} onChange={setSets} />
+            </div>
             <div style={{ marginTop: 12 }}>
                 <button onClick={run} disabled={!files.length}>Run Clash Detection</button>
             </div>

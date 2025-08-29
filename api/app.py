@@ -4,6 +4,8 @@ import os
 import logging
 import json
 import tempfile
+import subprocess
+import sys
 
 app = Flask(__name__, static_folder='../static', static_url_path='')
 CORS(app)
@@ -11,12 +13,11 @@ CORS(app)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Detect IfcClash availability
+# Detect IfcClash availability (module presence; we will invoke the CLI entrypoint)
 try:
     import ifcclash  # type: ignore
-    from ifcclash import Clasher, ClashSettings  # type: ignore
     IFCCLASH_AVAILABLE = True
-    logger.info("IfcClash imported successfully")
+    logger.info("IfcClash module present; will use CLI fallback via `python -m ifcclash`")
 except Exception as e:
     IFCCLASH_AVAILABLE = False
     logger.warning(f"IfcClash not available: {e}")
@@ -73,17 +74,18 @@ def clash_detection():
             if 'b' in s:
                 s['b'] = rewrite_sources(s.get('b'))
 
-        # Run IfcClash
+        # Run IfcClash via CLI (python -m ifcclash <input_json> -o <output>)
         out_path = tempfile.mktemp(suffix='.json', dir='/tmp')
-        settings = ClashSettings()
-        settings.output = out_path
-        settings.logger = logger
+        in_path = tempfile.mktemp(suffix='.json', dir='/tmp')
+        with open(in_path, 'w') as fh:
+            json.dump(clash_sets, fh)
 
-        clasher = Clasher(settings)
-        clasher.clash_sets = clash_sets
-        logger.info(f"Starting clash with {len(clash_sets)} sets and {len(uploaded_files)} files")
-        clasher.clash()
-        clasher.export()
+        logger.info(f"Executing IfcClash CLI with {len(clash_sets)} sets → {out_path}")
+        cmd = [sys.executable, '-m', 'ifcclash', in_path, '-o', out_path]
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if proc.returncode != 0:
+            logger.error(f"IfcClash failed: {proc.stderr}\n{proc.stdout}")
+            return jsonify({"success": False, "error": "IfcClash execution failed", "stderr": proc.stderr}), 500
 
         with open(out_path, 'r') as fh:
             results = json.load(fh)
