@@ -45,6 +45,8 @@ export interface ClashSetResult {
 }
 
 export default function Home() {
+  const apiBaseRaw = process.env.NEXT_PUBLIC_API_BASE_URL || '';
+  const apiBase = apiBaseRaw.replace(/\/$/, '');
   const [files, setFiles] = useState<File[]>([]);
   const [clashSets, setClashSets] = useState<ClashSet[]>([]);
   const [results, setResults] = useState<ClashSetResult[]>([]);
@@ -60,7 +62,7 @@ export default function Home() {
 
   const checkApiStatus = useCallback(async () => {
     try {
-      const response = await fetch('/api/health');
+      const response = await fetch(`${apiBase}/api/health`);
       const status = await response.json();
       setApiStatus({
         available: response.ok,
@@ -128,7 +130,7 @@ export default function Home() {
       // Add clash configuration
       formData.append('clash_sets', JSON.stringify(clashSets));
 
-      const response = await fetch('/api/clash-detection', {
+      const response = await fetch(`${apiBase}/api/clash-detection`, {
         method: 'POST',
         body: formData,
       });
