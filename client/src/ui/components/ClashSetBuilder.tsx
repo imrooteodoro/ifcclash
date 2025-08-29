@@ -19,20 +19,22 @@ export type ClashSet = {
 }
 
 // Preset configurations for common clash detection scenarios
-const PRESETS = {
+const PRESETS: Record<string, Omit<ClashSet, 'name'> & { name: string }> = {
     'structural-mep': {
         name: 'Structural vs MEP',
         a: [{ file: '', entityTypes: ['IfcWall', 'IfcColumn', 'IfcBeam', 'IfcSlab'] }],
         b: [{ file: '', entityTypes: ['IfcPipe', 'IfcDuct', 'IfcCableCarrier'] }],
         mode: 'collision' as const,
-        allow_touching: false
+        allow_touching: false,
+        check_all: true
     },
     'mep-mep': {
         name: 'MEP vs MEP',
         a: [{ file: '', entityTypes: ['IfcPipe'] }],
         b: [{ file: '', entityTypes: ['IfcDuct', 'IfcCableCarrier'] }],
         mode: 'collision' as const,
-        allow_touching: false
+        allow_touching: false,
+        check_all: true
     },
     'architectural-structural': {
         name: 'Architectural vs Structural',
@@ -54,19 +56,22 @@ const PRESETS = {
         name: 'Within Structural',
         a: [{ file: '', entityTypes: ['IfcBeam', 'IfcColumn', 'IfcSlab'] }],
         mode: 'collision' as const,
-        allow_touching: false
+        allow_touching: false,
+        check_all: true
     },
     'mep-routing': {
         name: 'MEP Routing Analysis',
         a: [{ file: '', entityTypes: ['IfcPipe', 'IfcDuct', 'IfcCableCarrier'] }],
         mode: 'collision' as const,
-        allow_touching: false
+        allow_touching: false,
+        check_all: true
     },
     'collision-only': {
         name: 'Hard Collision Check',
         a: [{ file: '', entityTypes: ['IfcWall', 'IfcBeam', 'IfcColumn', 'IfcPipe', 'IfcDuct'] }],
         mode: 'collision' as const,
-        allow_touching: false
+        allow_touching: false,
+        check_all: true
     },
     'accessibility-clearance': {
         name: 'Accessibility Clearance',
@@ -159,17 +164,23 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
 
     const applyPreset = (presetKey: keyof typeof PRESETS) => {
         const preset = PRESETS[presetKey]
-        const newSet = {
-            ...preset,
+        const newSet: ClashSet = {
             name: `${preset.name} ${value.length + 1}`,
             a: preset.a.map(src => ({
                 ...src,
                 file: fileOptions[0] || ''
             })),
-            b: preset.b?.map(src => ({
-                ...src,
-                file: fileOptions[0] || ''
-            }))
+            ...(preset.b && {
+                b: preset.b.map(src => ({
+                    ...src,
+                    file: fileOptions[0] || ''
+                }))
+            }),
+            ...(preset.mode && { mode: preset.mode }),
+            ...(preset.allow_touching !== undefined && { allow_touching: preset.allow_touching }),
+            ...(preset.tolerance !== undefined && { tolerance: preset.tolerance }),
+            ...(preset.clearance !== undefined && { clearance: preset.clearance }),
+            ...(preset.check_all !== undefined && { check_all: preset.check_all })
         }
         onChange([...value, newSet])
         setExpandedSet(value.length)
@@ -346,41 +357,44 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                 <div style={{ marginBottom: 24 }}>
                     <h3 style={{ margin: '0 0 16px 0', color: '#374151' }}>Quick Start Presets</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-                        {Object.entries(PRESETS).map(([key, preset]) => (
-                            <div key={key} style={{
-                                padding: 20,
-                                border: '1px solid #e2e8f0',
-                                borderRadius: 8,
-                                background: '#fafbfc',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s'
-                            }}
-                                onClick={() => applyPreset(key as keyof typeof PRESETS)}
-                                onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                                onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                            >
-                                <h4 style={{ margin: '0 0 8px 0', color: '#1e293b' }}>{preset.name}</h4>
-                                <p style={{ margin: 0, color: '#64748b', fontSize: '0.875rem' }}>
-                                    {preset.a[0].entityTypes?.slice(0, 3).join(', ')}
-                                    {preset.a[0].entityTypes && preset.a[0].entityTypes.length > 3 ? '...' : ''}
-                                    {preset.b ? ' vs ' : ' analysis'}
-                                    {preset.b?.[0].entityTypes?.slice(0, 3).join(', ')}
-                                    {preset.b?.[0].entityTypes && preset.b[0].entityTypes.length > 3 ? '...' : ''}
-                                </p>
-                                <div style={{
-                                    marginTop: 12,
-                                    padding: '4px 8px',
-                                    background: '#dbeafe',
-                                    color: '#1d4ed8',
-                                    borderRadius: 12,
-                                    fontSize: '0.75rem',
-                                    fontWeight: '500',
-                                    display: 'inline-block'
-                                }}>
-                                    {preset.mode}
+                        {Object.entries(PRESETS).map(([key, preset]) => {
+                            const hasGroupB = 'b' in preset && preset.b && preset.b.length > 0
+                            return (
+                                <div key={key} style={{
+                                    padding: 20,
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: 8,
+                                    background: '#fafbfc',
+                                    cursor: 'pointer',
+                                    transition: 'all 0.2s'
+                                }}
+                                    onClick={() => applyPreset(key as keyof typeof PRESETS)}
+                                    onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                                    onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                                >
+                                    <h4 style={{ margin: '0 0 8px 0', color: '#1e293b' }}>{preset.name}</h4>
+                                    <p style={{ margin: 0, color: '#64748b', fontSize: '0.875rem' }}>
+                                        {preset.a[0].entityTypes?.slice(0, 3).join(', ')}
+                                        {preset.a[0].entityTypes && preset.a[0].entityTypes.length > 3 ? '...' : ''}
+                                        {hasGroupB ? ' vs ' : ' analysis'}
+                                        {hasGroupB && preset.b?.[0].entityTypes?.slice(0, 3).join(', ')}
+                                        {hasGroupB && preset.b?.[0].entityTypes && preset.b[0].entityTypes.length > 3 ? '...' : ''}
+                                    </p>
+                                    <div style={{
+                                        marginTop: 12,
+                                        padding: '4px 8px',
+                                        background: '#dbeafe',
+                                        color: '#1d4ed8',
+                                        borderRadius: 12,
+                                        fontSize: '0.75rem',
+                                        fontWeight: '500',
+                                        display: 'inline-block'
+                                    }}>
+                                        {preset.mode}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            )
+                        })}
                     </div>
                 </div>
             )}

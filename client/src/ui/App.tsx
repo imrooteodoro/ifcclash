@@ -5,10 +5,7 @@ import ClashConfiguration from './components/ClashConfiguration'
 import ClashResults from './components/ClashResults'
 import ClashSetBuilder, { ClashSet } from './components/ClashSetBuilder'
 
-type ClashSource = { file: string; selector?: string; mode?: 'i' | 'e'; entityTypes?: string[] }
-type ClashSet = { name: string; a: ClashSource[]; b?: ClashSource[]; mode?: 'collision' | 'intersection' | 'clearance' | 'within_groups' | 'between_groups'; allow_touching?: boolean; tolerance?: number; clearance?: number; check_all?: boolean }
-
-const apiBase = import.meta.env.VITE_API_BASE?.replace(/\/$/, '') || ''
+const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ''
 
 export default function App() {
     const [activeTab, setActiveTab] = useState<'upload' | 'configure' | 'results'>('upload')
