@@ -29,20 +29,37 @@ except ImportError as e:
 app = Flask(__name__)
 CORS(app)  # Enable CORS for your frontend
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# Request logging middleware
+@app.before_request
+def log_request_info():
+    logger.debug(f"📨 Incoming request: {request.method} {request.url}")
+    logger.debug(f"   Headers: {dict(request.headers)}")
+    if request.data:
+        logger.debug(f"   Body: {request.data.decode('utf-8', errors='ignore')}")
+
+# Configure comprehensive logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler('/tmp/flask_debug.log', mode='w')
+    ]
+)
 logger = logging.getLogger(__name__)
+logger.info("Starting Flask application...")
 
 # API routes (must come before frontend routes)
 @app.route('/api/')
 def home():
+    logger.info("API root endpoint called")
     capabilities = []
     if IFCCLASH_AVAILABLE:
         capabilities.extend(["real_ifcclash", "geometric_clash_detection", "bcf_export"])
     else:
         capabilities.extend(["mock_fallback", "ui_testing"])
 
-    return jsonify({
+    response = {
         "status": "IfcClash API is running",
         "ifcclash_available": IFCCLASH_AVAILABLE,
         "capabilities": capabilities,
@@ -52,24 +69,39 @@ def home():
             "health": "/api/health",
             "clash_detection": "/api/clash-detection"
         }
-    })
+    }
+    logger.info(f"API root response: {response}")
+    return jsonify(response)
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
+    logger.info("🔍 Health check endpoint called - detailed logging enabled")
+    logger.info(f"Request method: {request.method}")
+    logger.info(f"Request path: {request.path}")
+    logger.info(f"Request headers: {dict(request.headers)}")
+
     capabilities = []
     if IFCCLASH_AVAILABLE:
         capabilities.append("real_ifcclash")
+        logger.info("✅ IfcClash library is available")
     else:
         capabilities.append("mock_fallback")
+        logger.warning("⚠️ IfcClash library not available - using fallback mode")
 
-    return jsonify({
+    response_data = {
         "status": "healthy",
         "ifcclash_available": IFCCLASH_AVAILABLE,
         "capabilities": capabilities,
         "temp_dir": "/tmp" if os.path.exists("/tmp") else "Not available",
         "python_version": f"{os.sys.version_info.major}.{os.sys.version_info.minor}",
-        "fallback_mode": not IFCCLASH_AVAILABLE
-    })
+        "fallback_mode": not IFCCLASH_AVAILABLE,
+        "current_time": "2024-01-01T00:00:00Z",
+        "environment": "Sevalla Docker"
+    }
+
+    logger.info(f"Health check response: {response_data}")
+    logger.info("✅ Health check completed successfully")
+    return jsonify(response_data)
 
 @app.route('/api/clash-detection', methods=['POST'])
 def clash_detection():
@@ -322,21 +354,30 @@ def _fallback_clash_detection():
 @app.route('/<path:path>')
 def serve_frontend(path):
     """Serve Next.js frontend files"""
-    # Skip API routes
+    logger.debug(f"Frontend request for path: '{path}'")
+
+    # Skip API routes - these should be handled by API routes above
     if path.startswith('api/'):
+        logger.warning(f"⚠️ Frontend route called for API path: {path}")
         return jsonify({"error": "API route not found"}), 404
 
     # Serve index.html for root and SPA routes
     if path == "" or path == "/" or not path or '.' not in path:
+        logger.debug("Serving index.html for SPA route")
         return send_from_directory('../out', 'index.html')
 
     # Try to serve the file directly
     try:
-        if os.path.exists(f'../out/{path}'):
+        file_path = f'../out/{path}'
+        if os.path.exists(file_path):
+            logger.debug(f"Serving static file: {file_path}")
             return send_from_directory('../out', path)
-        # If file doesn't exist, serve index.html for SPA routing
-        return send_from_directory('../out', 'index.html')
-    except:
+        else:
+            logger.debug(f"File not found: {file_path}, serving index.html")
+            # If file doesn't exist, serve index.html for SPA routing
+            return send_from_directory('../out', 'index.html')
+    except Exception as e:
+        logger.error(f"Error serving frontend file: {e}")
         return send_from_directory('../out', 'index.html')
 
 @app.errorhandler(404)
@@ -349,7 +390,23 @@ def internal_error(error):
 
 # Sevalla production deployment
 if __name__ == '__main__':
+    logger.info("🚀 Starting Flask application in Sevalla environment")
+
     # Get port from environment (Sevalla sets PORT automatically)
-    port = int(os.environ.get('PORT', 5000))
+    port = int(os.environ.get('PORT', 8080))
+    logger.info(f"📡 Listening on port: {port}")
+    logger.info(f"🌐 Host: 0.0.0.0")
+    logger.info(f"🔧 Debug mode: False")
+    logger.info(f"📁 Current working directory: {os.getcwd()}")
+    logger.info(f"📂 API directory exists: {os.path.exists('api')}")
+    logger.info(f"📂 Frontend directory exists: {os.path.exists('../out')}")
+
+    # Log all registered routes
+    logger.info("📋 Registered routes:")
+    for rule in app.url_map.iter_rules():
+        logger.info(f"  {rule.methods} {rule.rule}")
+
+    logger.info("🎯 Flask application startup complete - ready to serve requests")
+
     # Run in production mode for Sevalla
     app.run(host='0.0.0.0', port=port, debug=False)
