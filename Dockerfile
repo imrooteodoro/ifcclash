@@ -10,7 +10,7 @@ FROM aecgeeks/ifcopenshell:latest
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 COPY api/ ./api/
 COPY --from=ui /ui/../static ./static
