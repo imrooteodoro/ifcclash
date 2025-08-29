@@ -1,3 +1,6 @@
+[phases.setup]
+nixPkgs = ["nodejs_18"]
+
 [phases.install]
 cmds = [
   "npm ci --prefix client"
