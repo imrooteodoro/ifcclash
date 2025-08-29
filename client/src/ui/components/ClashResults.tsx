@@ -1,3 +1,5 @@
+import React, { useState } from 'react'
+
 type ClashData = {
     results: Array<{
         name: string
@@ -27,7 +29,7 @@ export default function ClashResults({ data }: Props) {
         sum + Object.keys(set.clashes || {}).length, 0
     )
 
-    const handleClashClick = (clashId: string, clash: any) => {
+    const handleClashClick = (clashId: string, _clash: any) => {
         const newSelected = new Set(selectedClashes)
         if (newSelected.has(clashId)) {
             newSelected.delete(clashId)

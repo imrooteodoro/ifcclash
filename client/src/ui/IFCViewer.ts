@@ -188,7 +188,6 @@ export class IFCViewer {
 
             const modelID = this.ifcAPI.OpenModel(new Uint8Array(data), {
                 COORDINATE_TO_ORIGIN: true,
-                USE_FAST_BOOLS: true,
             });
             console.log("Model opened with ID:", modelID);
 
@@ -494,15 +493,15 @@ export class IFCViewer {
                     confirmation = document.createElement("div");
                     confirmation.className = "pdf-upload-confirmation";
                     // Styling similar to the model tree / app alerts
-                    confirmation.style.marginTop = "5px";
-                    confirmation.style.fontSize = "14px";
-                    confirmation.style.color = "#155724";
-                    confirmation.style.backgroundColor = "#d4edda";
-                    confirmation.style.border = "1px solid #c3e6cb";
-                    confirmation.style.borderRadius = "4px";
-                    confirmation.style.padding = "4px 8px";
-                    confirmation.style.maxWidth = "80%";
-                    confirmation.style.margin = "5px auto";
+                    (confirmation as HTMLElement).style.marginTop = "5px";
+                    (confirmation as HTMLElement).style.fontSize = "14px";
+                    (confirmation as HTMLElement).style.color = "#155724";
+                    (confirmation as HTMLElement).style.backgroundColor = "#d4edda";
+                    (confirmation as HTMLElement).style.border = "1px solid #c3e6cb";
+                    (confirmation as HTMLElement).style.borderRadius = "4px";
+                    (confirmation as HTMLElement).style.padding = "4px 8px";
+                    (confirmation as HTMLElement).style.maxWidth = "80%";
+                    (confirmation as HTMLElement).style.margin = "5px auto";
                     modelItem.appendChild(confirmation);
                 }
                 confirmation.textContent = `PDF uploaded successfully: ${file.name}`;
