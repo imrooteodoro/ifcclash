@@ -6,7 +6,9 @@
     "dev": "next dev --turbopack",
     "build": "next build --turbopack",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "deploy": "sevalla deploy",
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "react": "19.1.0",
