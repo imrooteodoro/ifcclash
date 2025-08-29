@@ -1,0 +1,14 @@
+[phases.install]
+cmds = [
+  "npm ci --prefix client"
+]
+
+[phases.build]
+cmds = [
+  "npm run build --prefix client"
+]
+
+[phases.start]
+cmd = "gunicorn api.app:app --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 300"
+
+

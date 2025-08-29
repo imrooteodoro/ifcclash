@@ -1,0 +1,20 @@
+{
+    "name": "ifcclash-ui",
+    "private": true,
+    "version": "0.1.0",
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview --port 4173"
+    },
+    "dependencies": {
+        "react": "19.1.0",
+        "react-dom": "19.1.0"
+    },
+    "devDependencies": {
+        "vite": "5.4.8",
+        "@vitejs/plugin-react": "4.3.1",
+        "typescript": "5.6.2"
+    }
+}
