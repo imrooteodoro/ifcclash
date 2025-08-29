@@ -5,14 +5,7 @@ RUN npm install --no-audit --no-fund
 COPY client/ .
 RUN npm run build
 
-FROM python:3.11-slim
-
-# System deps for ifcopenshell (GEOS/GDAL often required)
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libgeos-dev \
-    libgdal-dev \
-    && rm -rf /var/lib/apt/lists/*
+FROM aecgeeks/ifcopenshell:latest
 
 WORKDIR /app
 
