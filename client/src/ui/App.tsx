@@ -25,7 +25,7 @@ export default function App() {
     const [sets, setSets] = useState<ClashSet[]>([])
     const [error, setError] = useState<string | null>(null)
     const [isRunning, setIsRunning] = useState(false)
-    const [progress, setProgress] = useState<{stage: string; progress: number} | null>(null)
+    const [progress, setProgress] = useState<{ stage: string; progress: number } | null>(null)
 
     const checkHealth = useCallback(async () => {
         setError(null)
