@@ -5,7 +5,7 @@ RUN npm install --no-audit --no-fund
 COPY client/ .
 RUN npm run build
 
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # System deps for ifcopenshell (GEOS/GDAL often required)
 RUN apt-get update && apt-get install -y \
