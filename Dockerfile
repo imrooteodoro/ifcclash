@@ -20,7 +20,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY api/ ./api/
-COPY --from=ui /static ./static
+COPY --from=ui /ui/../static ./static
 
 ENV PORT=8080
 EXPOSE 8080
