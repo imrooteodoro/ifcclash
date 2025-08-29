@@ -89,7 +89,13 @@ def clash_detection():
                 s['b'] = rewrite_sources(s.get('b'))
             # Set required mode and parameters for IfcClash 0.8.3
             if 'mode' not in s:
-                s['mode'] = 'collision'
+                # Auto-detect mode based on group configuration
+                if s.get('b') and len(s.get('a', [])) > 0:
+                    s['mode'] = 'between_groups'  # Between different groups
+                else:
+                    s['mode'] = 'within_groups'   # Within the same group
+
+            # Configure mode-specific parameters
             if s['mode'] == 'collision' and 'allow_touching' not in s:
                 s['allow_touching'] = False
             elif s['mode'] == 'intersection' and ('tolerance' not in s or 'check_all' not in s):
@@ -97,6 +103,10 @@ def clash_detection():
                 s['check_all'] = True
             elif s['mode'] == 'clearance' and ('clearance' not in s or 'check_all' not in s):
                 s['clearance'] = 0.01
+                s['check_all'] = True
+            elif s['mode'] == 'within_groups' and 'check_all' not in s:
+                s['check_all'] = True
+            elif s['mode'] == 'between_groups' and 'check_all' not in s:
                 s['check_all'] = True
 
         # Validate labels before running
