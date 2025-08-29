@@ -9,10 +9,11 @@ FROM aecgeeks/ifcopenshell:latest
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y python3-pip && rm -rf /var/lib/apt/lists/*
+RUN python3 -m ensurepip --upgrade || true
 
 COPY requirements.txt .
-RUN python3 -m pip install --no-cache-dir -r requirements.txt
+RUN python3 -m pip install --no-cache-dir --upgrade pip && \
+    python3 -m pip install --no-cache-dir -r requirements.txt
 
 COPY api/ ./api/
 COPY --from=ui /ui/../static ./static
