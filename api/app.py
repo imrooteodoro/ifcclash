@@ -68,7 +68,11 @@ def clash_detection():
                     if label in name_to_path:
                         src['file'] = name_to_path[label]
                     else:
-                        unknown_labels.add(label)
+                        # If only one file uploaded, auto-bind even when label mismatches
+                        if len(name_to_path) == 1:
+                            src['file'] = next(iter(name_to_path.values()))
+                        else:
+                            unknown_labels.add(label)
                 else:
                     # If only one file uploaded, auto-bind when label missing
                     if len(name_to_path) == 1:
