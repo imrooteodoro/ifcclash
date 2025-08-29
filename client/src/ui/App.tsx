@@ -1,14 +1,17 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState, useRef } from 'react'
 import ApiStatus from './components/ApiStatus'
 import FileUpload from './components/FileUpload'
 import ClashConfiguration from './components/ClashConfiguration'
 import ClashResults from './components/ClashResults'
 import ClashSetBuilder, { ClashSet } from './components/ClashSetBuilder'
+import { IFCViewer } from './IFCViewer'
 
 const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ''
 
 export default function App() {
-    const [activeTab, setActiveTab] = useState('upload' as 'upload' | 'configure' | 'results')
+    const [activeTab, setActiveTab] = useState('upload' as 'upload' | 'configure' | 'results' | 'viewer')
+    const viewerRef = useRef<HTMLDivElement>(null)
+    const ifcViewerRef = useRef<IFCViewer | null>(null)
     const [apiStatus, setApiStatus] = useState(null as null | {
         available: boolean
         ifcclash_available: boolean
@@ -54,6 +57,13 @@ export default function App() {
     useEffect(() => {
         checkHealth()
     }, [checkHealth])
+
+    // Initialize IFCViewer when viewer tab is activated
+    useEffect(() => {
+        if (activeTab === 'viewer' && viewerRef.current && !ifcViewerRef.current) {
+            ifcViewerRef.current = new IFCViewer(viewerRef.current)
+        }
+    }, [activeTab])
 
     const run = useCallback(async () => {
         if (!files.length) return
@@ -111,11 +121,18 @@ export default function App() {
         }
     }, [files, sets, setsText])
 
+    const loadIFCToViewer = useCallback(async (file: File) => {
+        if (ifcViewerRef.current) {
+            await ifcViewerRef.current.loadIFC(file)
+        }
+    }, [])
+
     const getTabIcon = (tab: string) => {
         switch (tab) {
             case 'upload': return '📁'
             case 'configure': return '⚙️'
             case 'results': return '📊'
+            case 'viewer': return '👁️'
             default: return '📄'
         }
     }
@@ -217,7 +234,8 @@ export default function App() {
                     {[
                         { key: 'upload', label: 'Upload Files', desc: 'Add IFC files for analysis' },
                         { key: 'configure', label: 'Configure Analysis', desc: 'Set up clash detection rules' },
-                        { key: 'results', label: 'View Results', desc: 'Review clash detection results' }
+                        { key: 'results', label: 'View Results', desc: 'Review clash detection results' },
+                        { key: 'viewer', label: '3D Viewer', desc: 'Visualize IFC models and clashes' }
                     ].map(tab => (
                         <button
                             key={tab.key}
@@ -527,6 +545,51 @@ export default function App() {
                             )}
 
                             <ClashResults data={result} />
+                        </div>
+                    )}
+
+                    {activeTab === 'viewer' && (
+                        <div>
+                            <div style={{ marginBottom: 24 }}>
+                                <h2 style={{ margin: '0 0 8px 0', color: '#1e293b', fontSize: '1.5rem' }}>👁️ 3D IFC Viewer</h2>
+                                <p style={{ margin: 0, color: '#64748b', fontSize: '1rem' }}>
+                                    Visualize your IFC models in 3D and isolate clash elements
+                                </p>
+                            </div>
+
+                            <div style={{
+                                display: 'flex',
+                                gap: 16,
+                                marginBottom: 16
+                            }}>
+                                <button
+                                    onClick={() => files.forEach(loadIFCToViewer)}
+                                    disabled={!files.length}
+                                    style={{
+                                        padding: '8px 16px',
+                                        background: files.length ? '#16a34a' : '#6b7280',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: 6,
+                                        cursor: files.length ? 'pointer' : 'not-allowed',
+                                        fontSize: '0.875rem',
+                                        fontWeight: '500'
+                                    }}
+                                >
+                                    Load IFC Files to Viewer
+                                </button>
+                            </div>
+
+                            <div
+                                ref={viewerRef}
+                                style={{
+                                    width: '100%',
+                                    height: '600px',
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: 8,
+                                    background: '#f8fafc'
+                                }}
+                            />
                         </div>
                     )}
                 </div>

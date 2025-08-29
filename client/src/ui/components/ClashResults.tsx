@@ -1,5 +1,3 @@
-import React from 'react'
-
 type ClashData = {
     results: Array<{
         name: string
@@ -21,11 +19,46 @@ type ClashData = {
 type Props = { data: ClashData | null }
 
 export default function ClashResults({ data }: Props) {
+    const [selectedClashes, setSelectedClashes] = useState<Set<string>>(new Set())
+
     if (!data?.results) return null
 
     const totalClashes = data.results.reduce((sum, set) =>
         sum + Object.keys(set.clashes || {}).length, 0
     )
+
+    const handleClashClick = (clashId: string, clash: any) => {
+        const newSelected = new Set(selectedClashes)
+        if (newSelected.has(clashId)) {
+            newSelected.delete(clashId)
+        } else {
+            newSelected.add(clashId)
+        }
+        setSelectedClashes(newSelected)
+    }
+
+    const handleIsolateInViewer = () => {
+        const selectedGuids: string[] = []
+        data.results.forEach(resultSet => {
+            Object.entries(resultSet.clashes || {}).forEach(([clashId, clash]) => {
+                if (selectedClashes.has(clashId)) {
+                    selectedGuids.push(clash.a_global_id, clash.b_global_id)
+                }
+            })
+        })
+
+        // Dispatch event for IFCViewer to handle
+        document.dispatchEvent(new CustomEvent("clash-selection-change", {
+            detail: { guids: selectedGuids }
+        }))
+    }
+
+    const handleClearSelection = () => {
+        setSelectedClashes(new Set())
+        document.dispatchEvent(new CustomEvent("clash-selection-change", {
+            detail: { guids: [] }
+        }))
+    }
 
     if (totalClashes === 0) {
         return (
@@ -51,6 +84,44 @@ export default function ClashResults({ data }: Props) {
                     {totalClashes} {totalClashes === 1 ? 'Clash' : 'Clashes'} Found
                 </span>
             </div>
+
+            {selectedClashes.size > 0 && (
+                <div style={{ display: 'flex', gap: 8, marginBottom: 16, padding: 12, background: '#f0f9ff', border: '1px solid #0ea5e9', borderRadius: 8 }}>
+                    <span style={{ fontSize: '0.875rem', color: '#0c4a6e' }}>
+                        {selectedClashes.size} {selectedClashes.size === 1 ? 'clash' : 'clashes'} selected
+                    </span>
+                    <button
+                        onClick={handleIsolateInViewer}
+                        style={{
+                            padding: '4px 12px',
+                            background: '#0ea5e9',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: 4,
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            fontWeight: '500'
+                        }}
+                    >
+                        👁️ Isolate in 3D Viewer
+                    </button>
+                    <button
+                        onClick={handleClearSelection}
+                        style={{
+                            padding: '4px 12px',
+                            background: '#6b7280',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: 4,
+                            cursor: 'pointer',
+                            fontSize: '0.75rem',
+                            fontWeight: '500'
+                        }}
+                    >
+                        ✕ Clear Selection
+                    </button>
+                </div>
+            )}
 
             {data.results.map((resultSet, setIndex) => {
                 const clashes = Object.entries(resultSet.clashes || {})
@@ -82,7 +153,24 @@ export default function ClashResults({ data }: Props) {
                                 </thead>
                                 <tbody>
                                     {clashes.map(([clashId, clash]) => (
-                                        <tr key={clashId} style={{ background: 'white', borderBottom: '1px solid #e2e8f0' }}>
+                                        <tr
+                                            key={clashId}
+                                            onClick={() => handleClashClick(clashId, clash)}
+                                            style={{
+                                                background: selectedClashes.has(clashId) ? '#e0f2fe' : 'white',
+                                                borderBottom: '1px solid #e2e8f0',
+                                                cursor: 'pointer',
+                                                transition: 'background-color 0.2s'
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                if (!selectedClashes.has(clashId)) {
+                                                    e.currentTarget.style.background = '#f8fafc'
+                                                }
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.background = selectedClashes.has(clashId) ? '#e0f2fe' : 'white'
+                                            }}
+                                        >
                                             <td style={{ padding: '12px', border: '1px solid #e2e8f0' }}>
                                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                                                     <div style={{ fontWeight: 'bold', color: '#1e293b' }}>
