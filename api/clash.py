@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 import tempfile
 import json
@@ -33,7 +33,8 @@ CORS(app)  # Enable CORS for your frontend
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-@app.route('/')
+# API routes (must come before frontend routes)
+@app.route('/api/')
 def home():
     capabilities = []
     if IFCCLASH_AVAILABLE:
@@ -315,6 +316,28 @@ def _fallback_clash_detection():
             "error": f"Fallback clash detection failed: {str(e)}",
             "type": type(e).__name__
         }), 500
+
+# Frontend serving routes (catch-all for Next.js SPA)
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_frontend(path):
+    """Serve Next.js frontend files"""
+    # Skip API routes
+    if path.startswith('api/'):
+        return jsonify({"error": "API route not found"}), 404
+
+    # Serve index.html for root and SPA routes
+    if path == "" or path == "/" or not path or '.' not in path:
+        return send_from_directory('../out', 'index.html')
+
+    # Try to serve the file directly
+    try:
+        if os.path.exists(f'../out/{path}'):
+            return send_from_directory('../out', path)
+        # If file doesn't exist, serve index.html for SPA routing
+        return send_from_directory('../out', 'index.html')
+    except:
+        return send_from_directory('../out', 'index.html')
 
 @app.errorhandler(404)
 def not_found(error):

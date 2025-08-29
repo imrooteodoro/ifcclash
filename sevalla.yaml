@@ -2,34 +2,25 @@
 version: '1'
 
 services:
-  - name: ifcclash-api
+  - name: ifcclash-app
     type: web
-    runtime: python
-    buildCommand: "docker build -t ifcclash-api ."
-    startCommand: "python api/clash.py"
+    runtime: docker
+    buildCommand: "docker build -t ifcclash-app ."
     healthCheckPath: "/api/health"
     envVars:
-      - key: PYTHON_VERSION
-        value: "3.11"
       - key: FLASK_ENV
         value: "production"
       - key: PORT
-        value: "5000"
-
-  - name: ifcclash-frontend
-    type: static
-    buildCommand: "npm run build"
-    publishDir: "out"
-    healthCheckPath: "/"
+        value: "8080"
 
 # Pipeline for Dev/QA/Prod environments
 pipelines:
   - name: ifcclash-pipeline
     environments:
       - name: development
-        services: [ifcclash-api, ifcclash-frontend]
+        services: [ifcclash-app]
       - name: production
-        services: [ifcclash-api, ifcclash-frontend]
+        services: [ifcclash-app]
 
 # Optional: Add database for storing clash results
 databases:
