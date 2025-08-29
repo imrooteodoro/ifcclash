@@ -2,10 +2,16 @@
 version: '1'
 
 services:
-  - name: ifcclash-app
+  - name: ifcclash-frontend
+    type: static
+    buildCommand: "npm ci && npm run build && npm run export"
+    publishDir: "out"
+    healthCheckPath: "/"
+
+  - name: ifcclash-api
     type: web
     runtime: docker
-    buildCommand: "docker build -t ifcclash-app ."
+    buildCommand: "docker build -t ifcclash-api ."
     healthCheckPath: "/api/health"
     envVars:
       - key: FLASK_ENV
@@ -18,9 +24,15 @@ pipelines:
   - name: ifcclash-pipeline
     environments:
       - name: development
-        services: [ifcclash-app]
+        services: [ifcclash-frontend, ifcclash-api]
       - name: production
-        services: [ifcclash-app]
+        services: [ifcclash-frontend, ifcclash-api]
+
+# Route API traffic to the API service
+routes:
+  - src: "/api/(.*)"
+    dest: "/$1"
+    service: ifcclash-api
 
 # Optional: Add database for storing clash results
 databases:
