@@ -3,7 +3,7 @@ nixPkgs = ["nodejs_18"]
 
 [phases.install]
 cmds = [
-  "npm ci --prefix client"
+  "npm install --prefix client --no-audit --no-fund"
 ]
 
 [phases.build]
