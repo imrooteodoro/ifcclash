@@ -112,7 +112,7 @@ type Props = {
 export default function ClashSetBuilder({ files, value, onChange }: Props) {
     const [activeTab, setActiveTab] = useState<'builder' | 'presets'>('builder')
     const [expandedSet, setExpandedSet] = useState<number | null>(null)
-    const [showEntitySelector, setShowEntitySelector] = useState<{ setIdx: number, group: 'a' | 'b', sourceIdx: number } | null>(null)
+    const [showEntitySelector, setShowEntitySelector] = useState<{ setIdx: number; group: 'a' | 'b'; sourceIdx: number } | null>(null)
 
     const fileOptions = files.map(f => f.name)
 
