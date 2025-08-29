@@ -139,8 +139,10 @@ export class IFCViewer {
             directionalLight.castShadow = true;
             this.scene.add(directionalLight);
 
-            // Initialize IFC API
-            await this.ifcAPI.Init();
+            // Initialize IFC API with proper WASM path
+            // Force single-threaded mode by passing true as second parameter
+            this.ifcAPI.SetWasmPath('/');
+            await this.ifcAPI.Init(undefined, true);
 
             // Setup UI components
             this.setupPicking();
@@ -1036,28 +1038,5 @@ export class IFCViewer {
     }
 }
 
-// Initialize the viewer when the DOM is ready
-document.addEventListener("DOMContentLoaded", () => {
-    const container = document.getElementById("viewer-container");
-    if (!container) {
-        throw new Error("Viewer container not found");
-    }
-
-    const viewer = new IFCViewer(container);
-
-    const input = document.getElementById("file-input") as HTMLInputElement;
-    if (!input) {
-        throw new Error("File input not found");
-    }
-
-    input.addEventListener(
-        "change",
-        async (event: Event) => {
-            const file = (event.target as HTMLInputElement).files?.[0];
-            if (file) {
-                await viewer.loadIFC(file);
-            }
-        },
-        false
-    );
-});
+// Note: IFCViewer is now initialized by React in App.tsx
+// The automatic DOM initialization has been removed to avoid conflicts

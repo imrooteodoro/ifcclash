@@ -581,6 +581,7 @@ export default function App() {
                             </div>
 
                             <div
+                                id="viewer-container"
                                 ref={viewerRef}
                                 style={{
                                     width: '100%',

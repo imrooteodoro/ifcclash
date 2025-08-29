@@ -6,6 +6,16 @@ export default defineConfig({
     build: {
         outDir: '../static',
         emptyOutDir: false
-    }
+    },
+    server: {
+        headers: {
+            'Cross-Origin-Embedder-Policy': 'require-corp',
+            'Cross-Origin-Opener-Policy': 'same-origin'
+        }
+    },
+    optimizeDeps: {
+        exclude: ['web-ifc']
+    },
+    publicDir: 'public'
 })
 
