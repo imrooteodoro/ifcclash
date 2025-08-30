@@ -29,6 +29,10 @@ export class IFCViewer {
     // Clash isolation state
     private guidIndex: Map<string, THREE.Object3D[]> = new Map();
     private lastIsolatedGuids: Set<string> = new Set();
+    private isWasmInitialized: boolean = false;
+    private currentZoomAnimation: number | null = null;
+    private initialCameraPosition: THREE.Vector3 | null = null;
+    private initialCameraTarget: THREE.Vector3 | null = null;
 
     constructor(container: HTMLElement) {
         this.container = container;
@@ -114,7 +118,12 @@ export class IFCViewer {
             this.camera.lookAt(0, 0, 0);
 
             // Setup renderer
-            this.renderer.setSize(window.innerWidth, window.innerHeight);
+            // Use container dimensions instead of window dimensions
+            const containerWidth = this.container.clientWidth || 800;
+            const containerHeight = this.container.clientHeight || 600;
+
+
+            this.renderer.setSize(containerWidth, containerHeight);
             this.renderer.setPixelRatio(window.devicePixelRatio);
             this.renderer.shadowMap.enabled = false;
             this.container.appendChild(this.renderer.domElement);
@@ -143,6 +152,7 @@ export class IFCViewer {
             // Force single-threaded mode by passing true as second parameter
             this.ifcAPI.SetWasmPath('/');
             await this.ifcAPI.Init(undefined, true);
+            this.isWasmInitialized = true;
 
             // Setup UI components
             this.setupPicking();
@@ -155,7 +165,7 @@ export class IFCViewer {
             // Start animation loop
             this.animate();
 
-            console.log("IFC viewer initialized successfully");
+
         } catch (error) {
             console.error("Error initializing IFC viewer:", error);
             if (error instanceof Error) {
@@ -167,9 +177,26 @@ export class IFCViewer {
     }
 
     private onWindowResize(): void {
-        this.camera.aspect = window.innerWidth / window.innerHeight;
+        const containerWidth = this.container.clientWidth || 800;
+        const containerHeight = this.container.clientHeight || 600;
+
+        this.camera.aspect = containerWidth / containerHeight;
         this.camera.updateProjectionMatrix();
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setSize(containerWidth, containerHeight);
+
+
+    }
+
+    public resize(): void {
+        this.onWindowResize();
+    }
+
+    public refreshViewer(): void {
+        // Force a resize to ensure proper dimensions
+        this.onWindowResize();
+
+        // Force a render
+        this.renderer.render(this.scene, this.camera);
     }
 
     private animate(): void {
@@ -180,16 +207,24 @@ export class IFCViewer {
 
     public async loadIFC(file: File): Promise<void> {
         try {
-            console.log("Starting to load IFC file:", file.name);
+
             this.showLoading();
 
+            // Ensure WASM is fully initialized before proceeding
+            if (!this.isWasmInitialized) {
+
+                await this.ifcAPI.Init(undefined, true);
+                this.isWasmInitialized = true;
+
+            }
+
             const data = await file.arrayBuffer();
-            console.log("File read as ArrayBuffer");
+
 
             const modelID = this.ifcAPI.OpenModel(new Uint8Array(data), {
                 COORDINATE_TO_ORIGIN: true,
             });
-            console.log("Model opened with ID:", modelID);
+
 
             const model = new THREE.Group() as IFCModel;
             model.name = file.name;
@@ -206,7 +241,7 @@ export class IFCViewer {
                 // Get the IFC type name
                 const typeCode = this.ifcAPI.GetLineType(modelID, expressID);
                 const ifcType = this.ifcAPI.GetNameFromTypeCode(typeCode);
-                console.log(`Processing element ${expressID} of type ${ifcType}`);
+
 
                 const elementGroup = this.createElementGroup(
                     expressID,
@@ -255,9 +290,7 @@ export class IFCViewer {
                 model.add(elementGroup);
                 elementCount++;
             });
-            console.log(
-                `Processed ${elementCount} elements with ${geometryCount} geometries`
-            );
+
 
             this.scene.add(model);
             const modelId = ++this.modelCounter;
@@ -269,10 +302,7 @@ export class IFCViewer {
             const center = box.getCenter(new THREE.Vector3());
             const size = box.getSize(new THREE.Vector3());
 
-            console.log("Model bounds:", {
-                size: size.toArray(),
-                center: center.toArray(),
-            });
+
 
             const maxDim = Math.max(size.x, size.y, size.z);
             const fov = this.camera.fov * (Math.PI / 180);
@@ -287,7 +317,7 @@ export class IFCViewer {
             this.camera.lookAt(center);
             this.controls.update();
 
-            console.log("IFC file loaded successfully");
+
         } catch (error) {
             console.error("Error loading IFC file:", error);
             if (error instanceof Error) {
@@ -302,11 +332,15 @@ export class IFCViewer {
         try {
             const line = this.ifcAPI.GetLine(modelID, expressID);
             const guid = this.extractGuid(line);
+
             if (guid) {
                 elementGroup.userData.guid = guid;
                 const arr = this.guidIndex.get(guid) || [];
                 arr.push(elementGroup);
                 this.guidIndex.set(guid, arr);
+
+            } else {
+                console.warn(`No GUID found for element ${expressID}`);
             }
         } catch (e) {
             console.warn("Could not read line for expressID", expressID, e);
@@ -482,7 +516,7 @@ export class IFCViewer {
         pdfInput.addEventListener("change", (event: Event) => {
             const file = (event.target as HTMLInputElement).files?.[0];
             if (file) {
-                console.log(`PDF uploaded for model ${modelId}:`, file.name);
+
                 // Mark this model as having a PDF loaded and store a single random preview image.
                 model.userData.hasPDF = true;
                 model.userData.pdfPreviewImage = this.getRandomPdfImage();
@@ -695,95 +729,290 @@ export class IFCViewer {
     }
 
     private zoomToBox(bbox: THREE.Box3): void {
+        // Cancel any ongoing zoom animation
+        if (this.currentZoomAnimation !== null) {
+            cancelAnimationFrame(this.currentZoomAnimation);
+            this.currentZoomAnimation = null;
+        }
+
         const center = new THREE.Vector3();
         const size = new THREE.Vector3();
         bbox.getCenter(center);
         bbox.getSize(size);
 
-        // Calculate the required camera position
         const maxDim = Math.max(size.x, size.y, size.z);
         const fov = this.camera.fov * (Math.PI / 180);
-        let cameraZ = Math.abs(maxDim / Math.tan(fov / 2));
-        cameraZ *= 2.5; // Increased padding for better view
 
-        // Get current distance to target
-        const currentDistance = this.camera.position.distanceTo(center);
+        // Calculate optimal distance for tight framing
+        const distance = (maxDim / 2) / Math.tan(fov / 2) * 1.1; // 10% padding
+        const clampedDistance = Math.max(2, Math.min(distance, 30));
 
-        // Check if box is already in good view
-        const currentDir = new THREE.Vector3()
-            .subVectors(this.camera.position, center)
-            .normalize();
-        const boxInView = this.isBoxInGoodView(bbox, currentDir, currentDistance);
+        // Simple camera positioning for bounding box
+        const newPosition = new THREE.Vector3();
 
-        // Calculate new camera position
-        let newPosition: THREE.Vector3;
-
-        if (!boxInView) {
-            // If box isn't in good view, calculate best viewing angle
-            const direction = new THREE.Vector3();
-
-            // Try to maintain similar horizontal angle but adjust vertical angle
-            direction.copy(currentDir);
-            direction.y = 0.5; // Look down at 45 degrees
-            direction.normalize();
-
-            newPosition = center.clone().add(direction.multiplyScalar(cameraZ));
-        } else {
-            // If box is in good view, just adjust distance
-            newPosition = center.clone().add(currentDir.multiplyScalar(cameraZ));
-        }
+        // Classic 3/4 view that's well centered
+        const angle = Math.PI / 4; // 45 degrees
+        newPosition.set(
+            center.x + Math.cos(angle) * clampedDistance * 0.7,  // Diagonal offset
+            center.y + clampedDistance * 0.8,                     // Above
+            center.z + Math.sin(angle) * clampedDistance * 0.7   // Diagonal offset
+        );
 
         // Animate camera movement
         const startPos = this.camera.position.clone();
         const startTarget = this.controls.target.clone();
         const startTime = performance.now();
-        const duration = 1500; // 1.5 seconds
+        const duration = 800; // Consistent with clash point zoom duration
 
         const animate = (currentTime: number): void => {
             const elapsed = currentTime - startTime;
             const progress = Math.min(elapsed / duration, 1);
 
-            // Smooth ease-out function
-            const ease = 1 - Math.pow(1 - progress, 3);
+            // Smooth ease-in-out using sine
+            const ease = 0.5 - 0.5 * Math.cos(progress * Math.PI);
 
-            // Update camera position
+            // Update camera position and target with lerp
             this.camera.position.lerpVectors(startPos, newPosition, ease);
-
-            // Update controls target
             this.controls.target.lerpVectors(startTarget, center, ease);
+
+            // Ensure camera looks at target
+            this.camera.lookAt(this.controls.target);
             this.controls.update();
 
             // Continue animation if not complete
             if (progress < 1) {
-                requestAnimationFrame(animate);
+                this.currentZoomAnimation = requestAnimationFrame(animate);
+            } else {
+                // Final positioning - ensure exact centering
+                this.camera.position.copy(newPosition);
+                this.controls.target.copy(center);
+                this.camera.lookAt(center);
+                this.controls.update();
+                this.currentZoomAnimation = null;
             }
         };
 
-        requestAnimationFrame(animate);
+        this.currentZoomAnimation = requestAnimationFrame(animate);
     }
 
-    private isBoxInGoodView(
-        bbox: THREE.Box3,
-        cameraDir: THREE.Vector3,
-        distance: number
-    ): boolean {
-        // Get box dimensions
+    private zoomToClashPoints(clashPoints: [number, number, number][], targets: THREE.Object3D[]): void {
+        // Cancel any ongoing animation
+        if (this.currentZoomAnimation !== null) {
+            cancelAnimationFrame(this.currentZoomAnimation);
+            this.currentZoomAnimation = null;
+        }
+
+        // If only one clash point, use the single point zoom
+        if (clashPoints.length === 1) {
+            this.zoomToClashPoint(clashPoints[0], targets);
+            return;
+        }
+
+        // Create a bounding box that encompasses all clash points
+        const clashBounds = new THREE.Box3();
+        clashPoints.forEach(point => {
+            const p = new THREE.Vector3(point[0], point[1], point[2]);
+            clashBounds.expandByPoint(p);
+        });
+
+        // Add some padding around the clash points
+        const padding = 1.0; // 1 unit padding
+        clashBounds.min.sub(new THREE.Vector3(padding, padding, padding));
+        clashBounds.max.add(new THREE.Vector3(padding, padding, padding));
+
+        // Also consider the objects' bounding box
+        let objectBounds = new THREE.Box3();
+        let hasObjectBounds = false;
+
+        for (const obj of targets) {
+            const objBox = new THREE.Box3().setFromObject(obj);
+            if (!objBox.isEmpty()) {
+                if (!hasObjectBounds) {
+                    objectBounds = objBox.clone();
+                    hasObjectBounds = true;
+                } else {
+                    objectBounds.union(objBox);
+                }
+            }
+        }
+
+        // Use the union of clash points box and objects box
+        let finalBox = clashBounds.clone();
+        if (hasObjectBounds) {
+            // Only expand if the object bounds are reasonably close to clash points
+            const clashCenter = new THREE.Vector3();
+            const objectCenter = new THREE.Vector3();
+            clashBounds.getCenter(clashCenter);
+            objectBounds.getCenter(objectCenter);
+
+            const distance = clashCenter.distanceTo(objectCenter);
+            const clashSize = new THREE.Vector3();
+            clashBounds.getSize(clashSize);
+            const maxClashDim = Math.max(clashSize.x, clashSize.y, clashSize.z);
+
+            // If objects are within reasonable distance, include them
+            if (distance < maxClashDim * 3) {
+                finalBox.union(objectBounds);
+            }
+        }
+
+        // Calculate center and size
+        const center = new THREE.Vector3();
         const size = new THREE.Vector3();
-        bbox.getSize(size);
+        finalBox.getCenter(center);
+        finalBox.getSize(size);
+
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = this.camera.fov * (Math.PI / 180);
+
+        // Calculate distance to fit all clash points with proper field of view
+        const distance = (maxDim / 2) / Math.tan(fov / 2) * 1.4; // 40% extra for comfort
+        const clampedDistance = Math.max(5, Math.min(distance, 50)); // Reasonable bounds
+
+        // Simple camera positioning for multiple clash points
+        const newPosition = new THREE.Vector3();
+
+        // Use a centered isometric view for multiple clashes
+        const angle = Math.PI / 4; // 45 degrees for balanced view
+        newPosition.set(
+            center.x + Math.cos(angle) * clampedDistance * 0.6,  // Diagonal offset
+            center.y + clampedDistance * 0.9,                     // Higher for overview
+            center.z + Math.sin(angle) * clampedDistance * 0.6   // Diagonal offset
+        );
+
+        // Animate to new position
+        const startPos = this.camera.position.clone();
+        const startTarget = this.controls.target.clone();
+        const startTime = performance.now();
+        const duration = 800;
+
+        const animate = (currentTime: number): void => {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            // Smooth ease-in-out using sine for natural motion
+            const ease = 0.5 - 0.5 * Math.cos(progress * Math.PI);
+
+            // Interpolate position and target using lerp
+            this.camera.position.lerpVectors(startPos, newPosition, ease);
+            this.controls.target.lerpVectors(startTarget, center, ease);
+
+            // Ensure camera looks at the interpolated target
+            this.camera.lookAt(this.controls.target);
+            this.controls.update();
+
+            if (progress < 1) {
+                this.currentZoomAnimation = requestAnimationFrame(animate);
+            } else {
+                // Final positioning - ensure exact centering on the calculated center
+                this.camera.position.copy(newPosition);
+                this.controls.target.copy(center);
+                this.camera.lookAt(center);
+                this.controls.update();
+
+                this.currentZoomAnimation = null;
+            }
+        };
+
+        this.currentZoomAnimation = requestAnimationFrame(animate);
+    }
+
+    private zoomToClashPoint(clashPoint: [number, number, number], targets: THREE.Object3D[]): void {
+        // Cancel any ongoing animation
+        if (this.currentZoomAnimation !== null) {
+            cancelAnimationFrame(this.currentZoomAnimation);
+            this.currentZoomAnimation = null;
+        }
+
+        const focusPoint = new THREE.Vector3(clashPoint[0], clashPoint[1], clashPoint[2]);
+
+        // Calculate optimal viewing distance based on the clash context
+        // Get bounding box of the target objects to understand the scale
+        let contextBox = new THREE.Box3();
+        let hasBox = false;
+
+        for (const obj of targets) {
+            const objBox = new THREE.Box3().setFromObject(obj);
+            if (!objBox.isEmpty()) {
+                if (!hasBox) {
+                    contextBox = objBox.clone();
+                    hasBox = true;
+                } else {
+                    contextBox.union(objBox);
+                }
+            }
+        }
+
+        // If we couldn't get a box from objects, create a minimal context around the clash point
+        if (!hasBox) {
+            const contextSize = 2;
+            contextBox = new THREE.Box3(
+                new THREE.Vector3(focusPoint.x - contextSize, focusPoint.y - contextSize, focusPoint.z - contextSize),
+                new THREE.Vector3(focusPoint.x + contextSize, focusPoint.y + contextSize, focusPoint.z + contextSize)
+            );
+        }
+
+        // Calculate optimal distance based on the context size
+        const size = new THREE.Vector3();
+        contextBox.getSize(size);
         const maxDim = Math.max(size.x, size.y, size.z);
 
-        // Calculate ideal viewing distance
+        // Calculate distance to fit the context in view with some padding
         const fov = this.camera.fov * (Math.PI / 180);
-        const idealDistance = Math.abs(maxDim / Math.tan(fov / 2)) * 2.5;
+        const optimalDistance = (maxDim / 2) / Math.tan(fov / 2) * 1.5; // 1.5x for padding
+        const clampedDistance = Math.max(3, Math.min(optimalDistance, 20)); // Clamp between 3 and 20 units
 
-        // Check if current distance is close to ideal
-        const distanceOK = Math.abs(distance - idealDistance) < idealDistance * 0.5;
+        // Simple, direct camera positioning for better centering
+        // Position camera at a consistent angle that keeps clash centered
+        const newPosition = new THREE.Vector3();
 
-        // Check if camera has good vertical angle (between 30 and 60 degrees)
-        const verticalAngleOK = cameraDir.y > 0.3 && cameraDir.y < 0.7;
+        // Use a classic isometric-like view that's centered
+        // This avoids any rightward bias
+        const angle = Math.PI / 4; // 45 degrees
+        newPosition.set(
+            focusPoint.x + Math.cos(angle) * clampedDistance * 0.7,  // Diagonal offset
+            focusPoint.y + clampedDistance * 0.8,                     // Above
+            focusPoint.z + Math.sin(angle) * clampedDistance * 0.7   // Diagonal offset
+        );
 
-        return distanceOK && verticalAngleOK;
+        // Smooth animation using lerp as recommended
+        const startPos = this.camera.position.clone();
+        const startTarget = this.controls.target.clone();
+        const startTime = performance.now();
+        const duration = 600; // Slightly faster for more responsive feel
+
+        const animate = (currentTime: number): void => {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            // Smooth ease-in-out using sine for more natural motion
+            const ease = 0.5 - 0.5 * Math.cos(progress * Math.PI);
+
+            // Use lerp for smooth interpolation
+            this.camera.position.lerpVectors(startPos, newPosition, ease);
+            this.controls.target.lerpVectors(startTarget, focusPoint, ease);
+
+            // Ensure camera always looks at the interpolated target
+            this.camera.lookAt(this.controls.target);
+            this.controls.update();
+
+            if (progress < 1) {
+                this.currentZoomAnimation = requestAnimationFrame(animate);
+            } else {
+                // Final positioning - ensure EXACT centering
+                this.camera.position.copy(newPosition);
+                this.controls.target.copy(focusPoint);
+                this.camera.lookAt(focusPoint);
+                this.controls.update();
+
+                this.currentZoomAnimation = null;
+            }
+        };
+
+        this.currentZoomAnimation = requestAnimationFrame(animate);
     }
+
+
 
     public getContainer(): HTMLElement {
         return this.container;
@@ -951,7 +1180,7 @@ export class IFCViewer {
             image = this.getRandomPdfImage();
             model.userData.pdfPreviewImage = image;
         }
-        console.log("Showing PDF preview image at path:", image);
+
 
         // Populate preview window content with a single PNG image.
         this.pdfPreviewWindow.innerHTML = "";
@@ -981,7 +1210,19 @@ export class IFCViewer {
     }
 
     // Clash isolation methods
-    public isolateByGuids(guids: string[], opts: { zoom?: boolean } = { zoom: true }): void {
+    public isolateByGuids(guids: string[], opts: { zoom?: boolean; focusPoints?: [number, number, number][] } = { zoom: true }): void {
+        // Cancel any ongoing zoom animation when switching clashes
+        if (this.currentZoomAnimation !== null) {
+            cancelAnimationFrame(this.currentZoomAnimation);
+            this.currentZoomAnimation = null;
+        }
+
+        // Store initial camera position before first clash selection
+        if (this.lastIsolatedGuids.size === 0 && guids.length > 0) {
+            this.initialCameraPosition = this.camera.position.clone();
+            this.initialCameraTarget = this.controls.target.clone();
+        }
+
         // Union of target objects from the index
         const targets: THREE.Object3D[] = [];
         const missing: string[] = [];
@@ -991,6 +1232,7 @@ export class IFCViewer {
 
         uniq.forEach((g) => {
             const arr = this.guidIndex.get(g);
+
             if (arr && arr.length) targets.push(...arr);
             else missing.push(g);
         });
@@ -1010,20 +1252,33 @@ export class IFCViewer {
         // 2) Show only targets
         for (const o of targets) {
             o.traverse((obj) => {
-                if ((obj as THREE.Mesh).isMesh) obj.visible = true;
+                if ((obj as THREE.Mesh).isMesh) {
+                    obj.visible = true;
+                }
             });
         }
 
-        // 3) Zoom to union box
+        // 3) Zoom to clash points or union box
         if (opts.zoom) {
-            const union = new THREE.Box3();
-            let inited = false;
-            for (const o of targets) {
-                const b = new THREE.Box3().setFromObject(o);
-                union.copy(inited ? union.union(b) : b);
-                inited = true;
-            }
-            if (inited) this.zoomToBox(union);
+            // Small delay to ensure visibility changes are applied
+            setTimeout(() => {
+                if (opts.focusPoints && opts.focusPoints.length > 0) {
+                    // Focus on all clash points
+                    this.zoomToClashPoints(opts.focusPoints, targets);
+                } else {
+                    // Fallback to bounding box zoom
+                    const union = new THREE.Box3();
+                    let inited = false;
+                    for (const o of targets) {
+                        const b = new THREE.Box3().setFromObject(o);
+                        union.copy(inited ? union.union(b) : b);
+                        inited = true;
+                    }
+                    if (inited) {
+                        this.zoomToBox(union);
+                    }
+                }
+            }, 50);
         }
 
         if (missing.length) {
@@ -1032,9 +1287,70 @@ export class IFCViewer {
     }
 
     public clearClashIsolation(): void {
+        // Cancel any ongoing zoom animation
+        if (this.currentZoomAnimation !== null) {
+            cancelAnimationFrame(this.currentZoomAnimation);
+            this.currentZoomAnimation = null;
+        }
+
         this.lastIsolatedGuids.clear();
         this.showAll();
+
+        // Restore camera to initial position if we have it stored
+        if (this.initialCameraPosition && this.initialCameraTarget) {
+            this.animateCameraToPosition(this.initialCameraPosition, this.initialCameraTarget);
+
+            // Clear the stored positions after restoring
+            this.initialCameraPosition = null;
+            this.initialCameraTarget = null;
+        }
     }
+
+    private animateCameraToPosition(targetPosition: THREE.Vector3, targetLookAt: THREE.Vector3): void {
+        // Cancel any ongoing animation
+        if (this.currentZoomAnimation !== null) {
+            cancelAnimationFrame(this.currentZoomAnimation);
+            this.currentZoomAnimation = null;
+        }
+
+        const startPos = this.camera.position.clone();
+        const startTarget = this.controls.target.clone();
+        const startTime = performance.now();
+        const duration = 800;
+
+        const animate = (currentTime: number): void => {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+
+            // Smooth ease-in-out cubic
+            const ease = progress < 0.5
+                ? 4 * progress * progress * progress
+                : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+            // Interpolate position and target
+            this.camera.position.lerpVectors(startPos, targetPosition, ease);
+            this.controls.target.lerpVectors(startTarget, targetLookAt, ease);
+
+            // Update camera and controls
+            this.camera.lookAt(this.controls.target);
+            this.controls.update();
+
+            if (progress < 1) {
+                this.currentZoomAnimation = requestAnimationFrame(animate);
+            } else {
+                // Final positioning
+                this.camera.position.copy(targetPosition);
+                this.controls.target.copy(targetLookAt);
+                this.camera.lookAt(targetLookAt);
+                this.controls.update();
+                this.currentZoomAnimation = null;
+            }
+        };
+
+        this.currentZoomAnimation = requestAnimationFrame(animate);
+    }
+
+
 }
 
 // Note: IFCViewer is now initialized by React in App.tsx

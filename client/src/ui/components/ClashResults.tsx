@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import { useState, useCallback } from 'react'
 
 type ClashData = {
     results: Array<{
@@ -7,41 +7,42 @@ type ClashData = {
             a_global_id: string
             a_ifc_class: string
             a_name: string
+            a_building_storey?: string
             b_global_id: string
             b_ifc_class: string
             b_name: string
+            b_building_storey?: string
             type: string
             p1: [number, number, number]
             p2: [number, number, number]
             distance: number
+            severity?: 'critical' | 'high' | 'medium' | 'low'
         }>
     }>
 }
 
 type Props = { data: ClashData | null }
 
+
+
 export default function ClashResults({ data }: Props) {
     const [selectedClashes, setSelectedClashes] = useState<Set<string>>(new Set())
 
-    if (!data?.results) return null
+    const handleClashClick = useCallback((clashId: string) => {
+        setSelectedClashes(prev => {
+            const newSelected = new Set(prev)
+            if (newSelected.has(clashId)) {
+                newSelected.delete(clashId)
+            } else {
+                newSelected.add(clashId)
+            }
+            return newSelected
+        })
+    }, [])
 
-    const totalClashes = data.results.reduce((sum, set) =>
-        sum + Object.keys(set.clashes || {}).length, 0
-    )
-
-    const handleClashClick = (clashId: string, _clash: any) => {
-        const newSelected = new Set(selectedClashes)
-        if (newSelected.has(clashId)) {
-            newSelected.delete(clashId)
-        } else {
-            newSelected.add(clashId)
-        }
-        setSelectedClashes(newSelected)
-    }
-
-    const handleIsolateInViewer = () => {
+    const handleIsolateInViewer = useCallback(() => {
         const selectedGuids: string[] = []
-        data.results.forEach(resultSet => {
+        data?.results?.forEach(resultSet => {
             Object.entries(resultSet.clashes || {}).forEach(([clashId, clash]) => {
                 if (selectedClashes.has(clashId)) {
                     selectedGuids.push(clash.a_global_id, clash.b_global_id)
@@ -49,20 +50,19 @@ export default function ClashResults({ data }: Props) {
             })
         })
 
-        // Dispatch event for IFCViewer to handle
         document.dispatchEvent(new CustomEvent("clash-selection-change", {
             detail: { guids: selectedGuids }
         }))
-    }
+    }, [selectedClashes, data])
 
-    const handleClearSelection = () => {
+    const handleClearSelection = useCallback(() => {
         setSelectedClashes(new Set())
         document.dispatchEvent(new CustomEvent("clash-selection-change", {
             detail: { guids: [] }
         }))
-    }
+    }, [])
 
-    if (totalClashes === 0) {
+    if (!data?.results) {
         return (
             <div style={{ padding: 16, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, textAlign: 'center' }}>
                 <h3 style={{ margin: 0, color: '#64748b' }}>No Clashes Found</h3>
@@ -83,7 +83,7 @@ export default function ClashResults({ data }: Props) {
                     fontSize: '0.875rem',
                     fontWeight: 'bold'
                 }}>
-                    {totalClashes} {totalClashes === 1 ? 'Clash' : 'Clashes'} Found
+                    {data.results.reduce((sum, set) => sum + Object.keys(set.clashes || {}).length, 0)} Clashes Found
                 </span>
             </div>
 
@@ -125,7 +125,7 @@ export default function ClashResults({ data }: Props) {
                 </div>
             )}
 
-            {data.results.map((resultSet, setIndex) => {
+            {data!.results.map((resultSet, setIndex) => {
                 const clashes = Object.entries(resultSet.clashes || {})
                 if (clashes.length === 0) return null
 
@@ -157,7 +157,7 @@ export default function ClashResults({ data }: Props) {
                                     {clashes.map(([clashId, clash]) => (
                                         <tr
                                             key={clashId}
-                                            onClick={() => handleClashClick(clashId, clash)}
+                                            onClick={() => handleClashClick(clashId)}
                                             style={{
                                                 background: selectedClashes.has(clashId) ? '#e0f2fe' : 'white',
                                                 borderBottom: '1px solid #e2e8f0',
@@ -237,5 +237,6 @@ export default function ClashResults({ data }: Props) {
         </div>
     )
 }
+
 
 

@@ -1,15 +1,16 @@
-import React, { useCallback, useEffect, useState, useRef } from 'react'
-import ApiStatus from './components/ApiStatus'
-import FileUpload from './components/FileUpload'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import ClashConfiguration from './components/ClashConfiguration'
-import ClashResults from './components/ClashResults'
+import ClashResults from './components/ClashResultsNew'
 import ClashSetBuilder, { ClashSet } from './components/ClashSetBuilder'
+import ClashSidebar from './components/ClashSidebar'
+import FileUpload from './components/FileUpload'
 import { IFCViewer } from './IFCViewer'
 
-const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ''
+const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || 'http://localhost:5001'
 
 export default function App() {
     const [activeTab, setActiveTab] = useState('upload' as 'upload' | 'configure' | 'results' | 'viewer')
+    const [showClashViewer, setShowClashViewer] = useState(false)
     const viewerRef = useRef<HTMLDivElement>(null)
     const ifcViewerRef = useRef<IFCViewer | null>(null)
     const [apiStatus, setApiStatus] = useState(null as null | {
@@ -26,6 +27,7 @@ export default function App() {
     const [error, setError] = useState(null as string | null)
     const [isRunning, setIsRunning] = useState(false)
     const [progress, setProgress] = useState(null as { stage: string; progress: number } | null)
+    const [loadedToViewer, setLoadedToViewer] = useState(new Set<string>())
 
     const checkHealth = useCallback(async () => {
         setError(null)
@@ -58,12 +60,26 @@ export default function App() {
         checkHealth()
     }, [checkHealth])
 
-    // Initialize IFCViewer when viewer tab is activated
-    useEffect(() => {
-        if (activeTab === 'viewer' && viewerRef.current && !ifcViewerRef.current) {
-            ifcViewerRef.current = new IFCViewer(viewerRef.current)
+    // Initialize IFCViewer manually
+    const initializeViewer = useCallback(() => {
+        if (viewerRef.current && !ifcViewerRef.current) {
+            const width = viewerRef.current.clientWidth;
+            const height = viewerRef.current.clientHeight;
+
+
+            if (width > 0 && height > 0) {
+                ifcViewerRef.current = new IFCViewer(viewerRef.current);
+                // Force a resize after initialization
+                setTimeout(() => {
+                    if (ifcViewerRef.current && typeof ifcViewerRef.current.resize === 'function') {
+                        ifcViewerRef.current.resize();
+                    }
+                }, 100);
+                return true;
+            }
         }
-    }, [activeTab])
+        return false;
+    }, [])
 
     const run = useCallback(async () => {
         if (!files.length) return
@@ -106,9 +122,26 @@ export default function App() {
 
             setProgress({ stage: 'Complete!', progress: 100 })
 
-            // Switch to results tab
+            // Switch to clash viewer if we have results, otherwise results tab
             setResult(responseData)
-            setActiveTab('results')
+
+
+            // Check if we have any clashes to show
+            const clashArray = responseData?.results || responseData
+            const hasClashes = Array.isArray(clashArray) && clashArray.length > 0
+
+
+            if (hasClashes) {
+
+                setShowClashViewer(true)
+                // Small delay to ensure the viewer tab content is rendered before switching
+                setTimeout(() => {
+                    setActiveTab('viewer')
+                }, 100)
+            } else {
+
+                setActiveTab('results')
+            }
 
             // Clear progress after a moment
             setTimeout(() => setProgress(null), 1000)
@@ -122,10 +155,75 @@ export default function App() {
     }, [files, sets, setsText])
 
     const loadIFCToViewer = useCallback(async (file: File) => {
-        if (ifcViewerRef.current) {
-            await ifcViewerRef.current.loadIFC(file)
+        // Initialize viewer if not already done
+        if (!ifcViewerRef.current) {
+            const initialized = initializeViewer();
+            if (!initialized) {
+                console.error("Failed to initialize viewer - container may not be ready");
+                return;
+            }
+        }
+
+        if (ifcViewerRef.current && !loadedToViewer.has(file.name)) {
+            await ifcViewerRef.current.loadIFC(file);
+            setLoadedToViewer(prev => new Set(prev).add(file.name));
+        }
+    }, [initializeViewer, loadedToViewer])
+
+    // Auto-load new IFC files to viewer when viewer tab is active
+    useEffect(() => {
+        if (files.length > 0 && activeTab === 'viewer') {
+            // Initialize viewer if not already done
+            if (!ifcViewerRef.current) {
+                // Use requestAnimationFrame to ensure DOM is rendered
+                requestAnimationFrame(() => {
+                    if (!ifcViewerRef.current) {
+                        const initialized = initializeViewer();
+                        if (initialized) {
+                            // Load files after successful initialization
+                            files.forEach(file => {
+                                if (!loadedToViewer.has(file.name)) {
+                                    loadIFCToViewer(file);
+                                }
+                            });
+                        }
+                    }
+                });
+            } else {
+                // Viewer exists, just load any new files
+                files.forEach(file => {
+                    if (!loadedToViewer.has(file.name)) {
+                        loadIFCToViewer(file);
+                    }
+                });
+            }
+        }
+    }, [files, activeTab, initializeViewer, loadIFCToViewer, loadedToViewer])
+
+    // Clash viewer handlers
+    const handleClashSelect = useCallback((_clashIds: string[], guids: string[], clashPoints?: [number, number, number][]) => {
+        if (ifcViewerRef.current && guids.length > 0) {
+            ifcViewerRef.current.isolateByGuids(guids, { zoom: true, focusPoints: clashPoints })
         }
     }, [])
+
+    const handleClearSelection = useCallback(() => {
+        if (ifcViewerRef.current) {
+            ifcViewerRef.current.clearClashIsolation()
+        }
+    }, [])
+
+    // Refresh viewer when returning to viewer tab
+    useEffect(() => {
+        if (activeTab === 'viewer' && ifcViewerRef.current) {
+            // Small delay to ensure tab is fully rendered
+            setTimeout(() => {
+                if (ifcViewerRef.current && typeof ifcViewerRef.current.refreshViewer === 'function') {
+                    ifcViewerRef.current.refreshViewer();
+                }
+            }, 100);
+        }
+    }, [activeTab])
 
     const getTabIcon = (tab: string) => {
         switch (tab) {
@@ -138,6 +236,8 @@ export default function App() {
     }
 
     const canRunAnalysis = files.length > 0 && (sets.length > 0 || setsText.trim())
+
+
 
     return (
         <div style={{
@@ -461,6 +561,7 @@ export default function App() {
                                             )}
                                         </div>
                                     </div>
+
                                 </>
                             )}
                         </div>
@@ -548,51 +649,184 @@ export default function App() {
                         </div>
                     )}
 
-                    {activeTab === 'viewer' && (
-                        <div>
-                            <div style={{ marginBottom: 24 }}>
-                                <h2 style={{ margin: '0 0 8px 0', color: '#1e293b', fontSize: '1.5rem' }}>👁️ 3D IFC Viewer</h2>
-                                <p style={{ margin: 0, color: '#64748b', fontSize: '1rem' }}>
-                                    Visualize your IFC models in 3D and isolate clash elements
-                                </p>
-                            </div>
+                    <div style={{ display: activeTab === 'viewer' ? 'block' : 'none' }}>
+                        {showClashViewer && result ? (
+                            /* Clash Viewer Layout */
+                            <div>
+                                <div style={{ marginBottom: 16 }}>
+                                    <h2 style={{ margin: '0 0 8px 0', color: '#1e293b', fontSize: '1.5rem' }}>🎯 Clash Analysis Results</h2>
+                                    <p style={{ margin: 0, color: '#64748b', fontSize: '1rem' }}>
+                                        Select clashes from the sidebar to isolate elements in 3D
+                                    </p>
+                                </div>
 
-                            <div style={{
-                                display: 'flex',
-                                gap: 16,
-                                marginBottom: 16
-                            }}>
-                                <button
-                                    onClick={() => files.forEach(loadIFCToViewer)}
-                                    disabled={!files.length}
+                                <div style={{
+                                    display: 'flex',
+                                    gap: 16,
+                                    height: '600px'
+                                }}>
+                                    {/* Clash Sidebar */}
+                                    <ClashSidebar
+                                        data={result?.results || result}
+                                        onClashSelect={handleClashSelect}
+                                        onClearSelection={handleClearSelection}
+                                    />
+
+                                    {/* 3D Viewer */}
+                                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                                        <div style={{
+                                            display: 'flex',
+                                            gap: 8,
+                                            marginBottom: 12,
+                                            alignItems: 'center'
+                                        }}>
+                                            {files.length > 0 && (
+                                                <div style={{
+                                                    padding: '6px 10px',
+                                                    background: '#f0f9ff',
+                                                    border: '1px solid #0ea5e9',
+                                                    borderRadius: 4,
+                                                    fontSize: '0.75rem',
+                                                    color: '#0c4a6e'
+                                                }}>
+                                                    📄 {files.length} model{files.length > 1 ? 's' : ''} loaded
+                                                </div>
+                                            )}
+
+                                            {ifcViewerRef.current && (
+                                                <button
+                                                    onClick={() => {
+                                                        if (ifcViewerRef.current) {
+                                                            ifcViewerRef.current.showAll();
+                                                        }
+                                                    }}
+                                                    style={{
+                                                        padding: '6px 12px',
+                                                        background: '#3b82f6',
+                                                        color: 'white',
+                                                        border: 'none',
+                                                        borderRadius: 4,
+                                                        cursor: 'pointer',
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: '500'
+                                                    }}
+                                                >
+                                                    Show All
+                                                </button>
+                                            )}
+
+                                            <button
+                                                onClick={() => {
+                                                    setShowClashViewer(false)
+                                                    setActiveTab('results')
+                                                }}
+                                                style={{
+                                                    padding: '6px 12px',
+                                                    background: '#6b7280',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: 4,
+                                                    cursor: 'pointer',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: '500'
+                                                }}
+                                            >
+                                                📊 Detailed Results
+                                            </button>
+                                        </div>
+
+                                        <div
+                                            id="viewer-container"
+                                            ref={viewerRef}
+                                            style={{
+                                                flex: 1,
+                                                border: '1px solid #e2e8f0',
+                                                borderRadius: 8,
+                                                background: '#f8fafc'
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            /* Regular 3D Viewer */
+                            <div>
+                                <div style={{ marginBottom: 24 }}>
+                                    <h2 style={{ margin: '0 0 8px 0', color: '#1e293b', fontSize: '1.5rem' }}>👁️ 3D IFC Viewer</h2>
+                                    <p style={{ margin: 0, color: '#64748b', fontSize: '1rem' }}>
+                                        {files.length > 0 ? 'Visualize your IFC models in 3D' : 'Upload IFC files to get started'}
+                                    </p>
+                                </div>
+
+                                {files.length > 0 ? (
+                                    <div style={{
+                                        display: 'flex',
+                                        gap: 16,
+                                        marginBottom: 16,
+                                        alignItems: 'center'
+                                    }}>
+                                        <div style={{
+                                            padding: '8px 12px',
+                                            background: '#f0f9ff',
+                                            border: '1px solid #0ea5e9',
+                                            borderRadius: 6,
+                                            fontSize: '0.875rem',
+                                            color: '#0c4a6e'
+                                        }}>
+                                            📄 {files.length} IFC file{files.length > 1 ? 's' : ''} loaded automatically
+                                        </div>
+
+                                        {ifcViewerRef.current && (
+                                            <button
+                                                onClick={() => {
+                                                    if (ifcViewerRef.current) {
+                                                        ifcViewerRef.current.showAll();
+                                                    }
+                                                }}
+                                                style={{
+                                                    padding: '8px 16px',
+                                                    background: '#3b82f6',
+                                                    color: 'white',
+                                                    border: 'none',
+                                                    borderRadius: 6,
+                                                    cursor: 'pointer',
+                                                    fontSize: '0.875rem',
+                                                    fontWeight: '500'
+                                                }}
+                                            >
+                                                Show All Elements
+                                            </button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div style={{
+                                        padding: '32px',
+                                        textAlign: 'center',
+                                        color: '#64748b',
+                                        background: '#f8fafc',
+                                        border: '2px dashed #cbd5e1',
+                                        borderRadius: 8,
+                                        marginBottom: 16
+                                    }}>
+                                        <div style={{ fontSize: '2rem', marginBottom: 8 }}>📁</div>
+                                        <div>Upload IFC files in the Upload tab to view them here</div>
+                                    </div>
+                                )}
+
+                                <div
+                                    id="viewer-container"
+                                    ref={viewerRef}
                                     style={{
-                                        padding: '8px 16px',
-                                        background: files.length ? '#16a34a' : '#6b7280',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: 6,
-                                        cursor: files.length ? 'pointer' : 'not-allowed',
-                                        fontSize: '0.875rem',
-                                        fontWeight: '500'
+                                        width: '100%',
+                                        height: '600px',
+                                        border: '1px solid #e2e8f0',
+                                        borderRadius: 8,
+                                        background: '#f8fafc'
                                     }}
-                                >
-                                    Load IFC Files to Viewer
-                                </button>
+                                />
                             </div>
-
-                            <div
-                                id="viewer-container"
-                                ref={viewerRef}
-                                style={{
-                                    width: '100%',
-                                    height: '600px',
-                                    border: '1px solid #e2e8f0',
-                                    borderRadius: 8,
-                                    background: '#f8fafc'
-                                }}
-                            />
-                        </div>
-                    )}
+                        )}
+                    </div>
                 </div>
             </div>
         </div>
