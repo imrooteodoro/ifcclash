@@ -19,6 +19,10 @@ export class ViewCube {
     private mainCamera: THREE.Camera;
     private mainControls: any;
     private options: Required<ViewCubeOptions>;
+    private raycaster: THREE.Raycaster;
+    private mouse: THREE.Vector2;
+    private hoveredFace: number | null = null;
+    private isTransitioning: boolean = false;
 
     private isAnimating: boolean = false;
     private animationId: number | null = null;
@@ -54,6 +58,27 @@ export class ViewCube {
     private hasMouseMoved: boolean = false;
     private dragThreshold: number = 3; // pixels - min movement to consider it a drag
 
+    // Face indices for raycasting
+    private readonly FACE_INDICES = {
+        RIGHT: 0,
+        LEFT: 1,
+        TOP: 2,
+        BOTTOM: 3,
+        FRONT: 4,
+        BACK: 5
+    };
+
+    // Predefined view positions relative to model center
+    // These are normalized direction vectors that will be scaled by camera distance
+    private readonly VIEW_POSITIONS = {
+        FRONT: new THREE.Vector3(0, 0, 1),
+        BACK: new THREE.Vector3(0, 0, -1),
+        LEFT: new THREE.Vector3(-1, 0, 0),
+        RIGHT: new THREE.Vector3(1, 0, 0),
+        TOP: new THREE.Vector3(0, 1, 0.001), // Slight offset to avoid gimbal lock
+        BOTTOM: new THREE.Vector3(0, -1, 0.001) // Slight offset to avoid gimbal lock
+    };
+
 
 
     constructor(container: HTMLElement, mainCamera: THREE.Camera, mainControls: any, ifcViewer: any, options: ViewCubeOptions = {}) {
@@ -79,6 +104,10 @@ export class ViewCube {
             animationDuration: options.animationDuration || 600,
             showZoomControls: options.showZoomControls !== false // Default to true
         };
+
+        // Initialize raycaster and mouse for face detection
+        this.raycaster = new THREE.Raycaster();
+        this.mouse = new THREE.Vector2();
 
 
 
@@ -131,7 +160,7 @@ export class ViewCube {
         canvasElement.style.top = `${this.options.position.y}px`;
         canvasElement.style.right = `${this.options.position.x}px`;
         canvasElement.style.zIndex = '10000'; // Very high z-index to ensure it's on top
-        canvasElement.style.cursor = 'pointer';
+        canvasElement.style.cursor = 'grab';
         canvasElement.style.pointerEvents = 'auto';
 
         // Clean, minimal styling - no background, no borders, just the cube
@@ -258,7 +287,8 @@ export class ViewCube {
     }
 
     private addFaceLabels(): void {
-        // Remove all face labels and visual indicators - no clicking functionality
+        // Face labels removed for cleaner appearance
+        // The ViewCube still supports clicking on faces for navigation
     }
 
     private setupGlassLighting(): void {
@@ -286,40 +316,50 @@ export class ViewCube {
     private setupEventListeners(): void {
         const canvas = this.renderer.domElement;
 
-
-
-
-        // Mouse down handler for drag start
+        // Mouse down handler for drag start and click detection
         const mousedownHandler = (event: MouseEvent) => {
-
             event.preventDefault();
             event.stopPropagation();
             event.stopImmediatePropagation();
             this.onMouseDown(event);
         };
 
-        // Mouse move handler for drag only
+        // Mouse move handler for drag and hover
         const mousemoveHandler = (event: MouseEvent) => {
             event.preventDefault();
             event.stopPropagation();
 
             if (this.isDragging) {
                 this.onDragMove(event);
+            } else {
+                // Check for face hover when not dragging
+                this.checkFaceHover(event);
             }
         };
 
-        // Mouse up handler for drag end
+        // Mouse up handler for drag end and click
         const mouseupHandler = (event: MouseEvent) => {
-
             event.preventDefault();
             event.stopPropagation();
             this.onMouseUp(event);
+        };
+
+        // Click handler for face selection
+        const clickHandler = (event: MouseEvent) => {
+            event.preventDefault();
+            event.stopPropagation();
+
+            // Only process clicks if not dragging and not transitioning
+            if (!this.wasJustDragging && !this.isDragging && !this.isTransitioning) {
+                this.onFaceClick(event);
+            }
         };
 
         // Add event listeners with capture phase to ensure they fire first
         canvas.addEventListener('mousedown', mousedownHandler, true);
         canvas.addEventListener('mousemove', mousemoveHandler, true);
         canvas.addEventListener('mouseup', mouseupHandler, true);
+        canvas.addEventListener('click', clickHandler, true);
         canvas.addEventListener('wheel', (e) => { e.stopPropagation(); e.preventDefault(); }, true);
 
         // Touch events for mobile support (drag only)
@@ -565,6 +605,180 @@ export class ViewCube {
 
 
 
+
+    private checkFaceHover(event: MouseEvent): void {
+        if (this.isTransitioning) return;
+
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        const intersects = this.raycaster.intersectObject(this.mainCubeMesh);
+
+        if (intersects.length > 0) {
+            const faceIndex = intersects[0].face?.materialIndex;
+            if (faceIndex !== undefined && faceIndex !== this.hoveredFace) {
+                this.hoveredFace = faceIndex;
+                this.updateFaceHighlight();
+            }
+        } else if (this.hoveredFace !== null) {
+            this.hoveredFace = null;
+            this.updateFaceHighlight();
+        }
+    }
+
+    private updateFaceHighlight(): void {
+        const canvas = this.renderer.domElement;
+        if (this.hoveredFace !== null) {
+            canvas.style.cursor = 'pointer';
+            // Update material opacity for hover effect
+            if (Array.isArray(this.mainCubeMesh.material)) {
+                this.mainCubeMesh.material.forEach((mat, index) => {
+                    if (mat instanceof THREE.MeshPhysicalMaterial) {
+                        mat.opacity = index === this.hoveredFace ? 0.95 : 0.85;
+                    }
+                });
+            }
+        } else {
+            canvas.style.cursor = this.isDragging ? 'grabbing' : 'grab';
+            // Reset all materials to default opacity
+            if (Array.isArray(this.mainCubeMesh.material)) {
+                this.mainCubeMesh.material.forEach((mat) => {
+                    if (mat instanceof THREE.MeshPhysicalMaterial) {
+                        mat.opacity = 0.92;
+                    }
+                });
+            }
+        }
+    }
+
+    private onFaceClick(event: MouseEvent): void {
+        if (this.isTransitioning) return;
+
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        this.raycaster.setFromCamera(this.mouse, this.camera);
+        const intersects = this.raycaster.intersectObject(this.mainCubeMesh);
+
+        if (intersects.length > 0) {
+            const faceIndex = intersects[0].face?.materialIndex;
+            if (faceIndex !== undefined) {
+                this.navigateToFace(faceIndex);
+            }
+        }
+    }
+
+    private navigateToFace(faceIndex: number): void {
+        let targetView: THREE.Vector3 | null = null;
+
+        switch (faceIndex) {
+            case this.FACE_INDICES.FRONT:
+                targetView = this.VIEW_POSITIONS.FRONT;
+                break;
+            case this.FACE_INDICES.BACK:
+                targetView = this.VIEW_POSITIONS.BACK;
+                break;
+            case this.FACE_INDICES.LEFT:
+                targetView = this.VIEW_POSITIONS.LEFT;
+                break;
+            case this.FACE_INDICES.RIGHT:
+                targetView = this.VIEW_POSITIONS.RIGHT;
+                break;
+            case this.FACE_INDICES.TOP:
+                targetView = this.VIEW_POSITIONS.TOP;
+                break;
+            case this.FACE_INDICES.BOTTOM:
+                targetView = this.VIEW_POSITIONS.BOTTOM;
+                break;
+        }
+
+        if (targetView) {
+            this.animateCameraToView(targetView);
+        }
+    }
+
+    private animateCameraToView(viewDirection: THREE.Vector3): void {
+        if (this.isTransitioning) return;
+        this.isTransitioning = true;
+
+        // Update model center
+        this.updateModelCenter();
+
+        // Calculate camera distance from current position
+        const currentDistance = this.mainCamera.position.distanceTo(this.modelCenter);
+
+        // Normalize the view direction
+        const normalizedDirection = viewDirection.clone().normalize();
+
+        // Calculate new camera position
+        const newCameraPosition = new THREE.Vector3()
+            .copy(normalizedDirection)
+            .multiplyScalar(currentDistance)
+            .add(this.modelCenter);
+
+        // Store start positions
+        const startPosition = this.mainCamera.position.clone();
+        const startTarget = this.mainControls.target.clone();
+        const startTime = performance.now();
+
+        // Calculate up vector to avoid camera roll
+        const upVector = new THREE.Vector3(0, 1, 0);
+        // For top/bottom views, use a different up vector
+        if (Math.abs(normalizedDirection.y) > 0.99) {
+            upVector.set(0, 0, normalizedDirection.y > 0 ? -1 : 1);
+        }
+
+        // Animation loop
+        const animate = () => {
+            const elapsed = performance.now() - startTime;
+            const progress = Math.min(elapsed / this.options.animationDuration, 1);
+
+            // Use easing function for smooth animation
+            const ease = this.easeInOutCubic(progress);
+
+            // Interpolate camera position
+            this.mainCamera.position.lerpVectors(startPosition, newCameraPosition, ease);
+
+            // Keep target at model center
+            this.mainControls.target.lerpVectors(startTarget, this.modelCenter, ease);
+
+            // Set camera up vector to prevent roll
+            this.mainCamera.up.lerp(upVector, ease * 0.1); // Gradual up vector change
+
+            // Update camera and controls
+            this.mainCamera.lookAt(this.mainControls.target);
+            this.mainControls.update();
+
+            // Update ViewCube orientation
+            this.updateCubeOrientation();
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                // Animation complete
+                this.isTransitioning = false;
+
+                // Ensure final position is exact
+                this.mainCamera.position.copy(newCameraPosition);
+                this.mainControls.target.copy(this.modelCenter);
+                this.mainCamera.up.copy(upVector);
+                this.mainCamera.lookAt(this.modelCenter);
+                this.mainControls.update();
+
+                // Update ViewCube one final time
+                this.updateCubeOrientation();
+            }
+        };
+
+        animate();
+    }
+
+    private easeInOutCubic(t: number): number {
+        return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
 
     private onMouseDown(event: MouseEvent): void {
         // Track mouse down for drag detection only
@@ -934,7 +1148,7 @@ export class ViewCube {
 
         // Reset cursor
         const canvas = this.renderer.domElement;
-        canvas.style.cursor = 'pointer';
+        canvas.style.cursor = 'grab';
     }
 
     private endDrag(): void {
@@ -964,7 +1178,7 @@ export class ViewCube {
 
             // Reset cursor
             const canvas = this.renderer.domElement;
-            canvas.style.cursor = 'pointer';
+            canvas.style.cursor = 'grab';
 
             // Reset mouse state
             this.resetMouseState();
