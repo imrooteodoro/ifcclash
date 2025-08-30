@@ -6,7 +6,11 @@
     "scripts": {
         "dev": "vite",
         "build": "vite build",
-        "preview": "vite preview --port 4173"
+        "preview": "vite preview --port 4173",
+        "dev:full": "../dev-start.sh",
+        "dev:full:py": "python3 ../dev.py",
+        "dev:backend": "../dev-start.sh --backend-only",
+        "dev:frontend": "../dev-start.sh --frontend-only"
     },
     "dependencies": {
         "@types/react": "^19.1.12",

@@ -13,13 +13,7 @@ export default function App() {
     const [showClashViewer, setShowClashViewer] = useState(false)
     const viewerRef = useRef<HTMLDivElement>(null)
     const ifcViewerRef = useRef<IFCViewer | null>(null)
-    const [apiStatus, setApiStatus] = useState(null as null | {
-        available: boolean
-        ifcclash_available: boolean
-        capabilities?: string[]
-        fallback_mode?: boolean
-        message: string
-    })
+
     const [files, setFiles] = useState([] as File[])
     const [setsText, setSetsText] = useState('')
     const [result, setResult] = useState(null as any)
@@ -29,36 +23,7 @@ export default function App() {
     const [progress, setProgress] = useState(null as { stage: string; progress: number } | null)
     const [loadedToViewer, setLoadedToViewer] = useState(new Set<string>())
 
-    const checkHealth = useCallback(async () => {
-        setError(null)
-        try {
-            const r = await fetch(`${apiBase}/api/health`)
-            const status = await r.json()
-            setApiStatus({
-                available: r.ok,
-                ifcclash_available: status.ifcclash_available ?? false,
-                capabilities: status.capabilities ?? [],
-                fallback_mode: status.fallback_mode ?? false,
-                message: status.ifcclash_available
-                    ? 'API is ready for clash detection'
-                    : status.fallback_mode
-                        ? 'API in fallback mode'
-                        : 'API running (IfcClash not available)'
-            })
-        } catch (e: any) {
-            setApiStatus({
-                available: false,
-                ifcclash_available: false,
-                capabilities: [],
-                fallback_mode: false,
-                message: 'API is not accessible'
-            })
-        }
-    }, [])
 
-    useEffect(() => {
-        checkHealth()
-    }, [checkHealth])
 
     // Initialize IFCViewer manually
     const initializeViewer = useCallback(() => {
@@ -277,44 +242,7 @@ export default function App() {
                             </div>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                            {apiStatus && (
-                                <div style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: 8,
-                                    padding: '8px 12px',
-                                    background: apiStatus.available ? '#dcfce7' : '#fef2f2',
-                                    borderRadius: 6,
-                                    border: `1px solid ${apiStatus.available ? '#16a34a' : '#dc2626'}`
-                                }}>
-                                    <div style={{
-                                        width: 8,
-                                        height: 8,
-                                        borderRadius: '50%',
-                                        background: apiStatus.available ? '#16a34a' : '#dc2626'
-                                    }} />
-                                    <span style={{ fontSize: '0.75rem', fontWeight: '500', color: apiStatus.available ? '#166534' : '#991b1b' }}>
-                                        {apiStatus.available ? 'API Connected' : 'API Offline'}
-                                    </span>
-                                </div>
-                            )}
 
-                            <button
-                                onClick={checkHealth}
-                                style={{
-                                    padding: '8px 12px',
-                                    background: '#f3f4f6',
-                                    border: '1px solid #d1d5db',
-                                    borderRadius: 6,
-                                    cursor: 'pointer',
-                                    fontSize: '0.875rem',
-                                    color: '#374151'
-                                }}
-                            >
-                                🔄 Refresh
-                            </button>
-                        </div>
                     </div>
                 </div>
             </div>

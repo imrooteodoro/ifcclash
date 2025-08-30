@@ -126,33 +126,7 @@ export default function ClashSidebar({ data, onClashSelect, onClearSelection }: 
         return filtered
     }, [allClashes, searchQuery, filterType, sortBy])
 
-    // Group clashes if needed
-    const groupedClashes = useMemo(() => {
-        if (groupBy === 'none') return { 'All Clashes': filteredClashes }
 
-        const groups: Record<string, ClashItem[]> = {}
-
-        filteredClashes.forEach(clash => {
-            let groupKey = 'Other'
-
-            switch (groupBy) {
-                case 'type':
-                    groupKey = clash.type || 'Unknown'
-                    break
-                case 'severity':
-                    groupKey = clash.severity || 'Unknown'
-                    break
-                case 'storey':
-                    groupKey = clash.a_building_storey || clash.b_building_storey || 'No Storey'
-                    break
-            }
-
-            if (!groups[groupKey]) groups[groupKey] = []
-            groups[groupKey].push(clash)
-        })
-
-        return groups
-    }, [filteredClashes, groupBy])
 
     // Pagination
     const totalPages = Math.ceil(filteredClashes.length / itemsPerPage)
@@ -166,13 +140,37 @@ export default function ClashSidebar({ data, onClashSelect, onClearSelection }: 
             }
         }
 
-        // For grouped view, show all groups but paginate within each group
+        // For grouped view, paginate through all filtered clashes but maintain grouping structure
+        const startIndex = (currentPage - 1) * itemsPerPage
+        const endIndex = startIndex + itemsPerPage
+        const paginatedItems = filteredClashes.slice(startIndex, endIndex)
+
+        // Re-group the paginated items
         const result: Record<string, ClashItem[]> = {}
-        Object.entries(groupedClashes).forEach(([groupKey, clashes]) => {
-            result[groupKey] = clashes.slice(0, itemsPerPage)
+        paginatedItems.forEach(clash => {
+            let groupKey = 'Other'
+
+            switch (groupBy) {
+                case 'type':
+                    groupKey = clash.type || 'Unknown'
+                    break
+                case 'severity':
+                    groupKey = clash.severity || 'Unknown'
+                    break
+                case 'storey':
+                    groupKey = clash.a_building_storey || clash.b_building_storey || 'No Storey'
+                    break
+                default:
+                    groupKey = 'All Clashes'
+                    break
+            }
+
+            if (!result[groupKey]) result[groupKey] = []
+            result[groupKey].push(clash)
         })
+
         return result
-    }, [filteredClashes, groupedClashes, currentPage, itemsPerPage, groupBy])
+    }, [filteredClashes, currentPage, itemsPerPage, groupBy])
 
     // Keyboard navigation
     useEffect(() => {

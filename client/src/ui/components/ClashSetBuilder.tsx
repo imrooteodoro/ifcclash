@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 export type ClashSource = {
     file: string
@@ -113,8 +113,54 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
     const [activeTab, setActiveTab] = useState('builder' as 'builder' | 'presets')
     const [expandedSet, setExpandedSet] = useState(null as number | null)
     const [showEntitySelector, setShowEntitySelector] = useState(null as { setIdx: number; group: 'a' | 'b'; sourceIdx: number } | null)
+    const [appliedPresets, setAppliedPresets] = useState<Set<string>>(new Set())
+    const [lastAppliedPreset, setLastAppliedPreset] = useState<string | null>(null)
+    const [lastRemovedPreset, setLastRemovedPreset] = useState<string | null>(null)
 
     const fileOptions = files.map(f => f.name)
+
+    // Check if a preset matches any of the current clash sets
+    const isPresetApplied = (presetKey: string): boolean => {
+        const preset = PRESETS[presetKey]
+        return value.some(set => {
+            // Check if the set matches the preset structure
+            const hasMatchingGroupA = set.a && preset.a &&
+                set.a.length === preset.a.length &&
+                set.a.every((source, idx) =>
+                    source.entityTypes &&
+                    preset.a[idx]?.entityTypes &&
+                    source.entityTypes.sort().join(',') === preset.a[idx].entityTypes.sort().join(',')
+                )
+
+            const hasMatchingGroupB = !preset.b || (set.b && preset.b &&
+                set.b.length === preset.b.length &&
+                set.b.every((source, idx) =>
+                    source.entityTypes &&
+                    preset.b?.[idx]?.entityTypes &&
+                    source.entityTypes.sort().join(',') === preset.b[idx].entityTypes.sort().join(',')
+                ))
+
+            return hasMatchingGroupA && hasMatchingGroupB &&
+                set.mode === preset.mode &&
+                set.allow_touching === preset.allow_touching
+        })
+    }
+
+    // Update applied presets based on current sets
+    const updateAppliedPresets = () => {
+        const newAppliedPresets = new Set<string>()
+        Object.keys(PRESETS).forEach(presetKey => {
+            if (isPresetApplied(presetKey)) {
+                newAppliedPresets.add(presetKey)
+            }
+        })
+        setAppliedPresets(newAppliedPresets)
+    }
+
+    // Update applied presets when value changes
+    useEffect(() => {
+        updateAppliedPresets()
+    }, [value])
 
     const updateSet = (idx: number, patch: Partial<ClashSet>) => {
         const next = value.slice()
@@ -164,26 +210,99 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
 
     const applyPreset = (presetKey: keyof typeof PRESETS) => {
         const preset = PRESETS[presetKey]
-        const newSet: ClashSet = {
-            name: `${preset.name} ${value.length + 1}`,
-            a: preset.a.map(src => ({
-                ...src,
-                file: fileOptions[0] || ''
-            })),
-            ...(preset.b && {
-                b: preset.b.map(src => ({
+        const isCurrentlyApplied = isPresetApplied(presetKey)
+
+        if (isCurrentlyApplied) {
+            // Remove all clash sets that match this preset
+            const filteredSets = value.filter(set => {
+                // Check if this set matches the preset we're trying to remove
+                const hasMatchingGroupA = set.a && preset.a &&
+                    set.a.length === preset.a.length &&
+                    set.a.every((source, idx) =>
+                        source.entityTypes &&
+                        preset.a[idx]?.entityTypes &&
+                        source.entityTypes.sort().join(',') === preset.a[idx].entityTypes.sort().join(',')
+                    )
+
+                const hasMatchingGroupB = !preset.b || (set.b && preset.b &&
+                    set.b.length === preset.b.length &&
+                    set.b.every((source, idx) =>
+                        source.entityTypes &&
+                        preset.b?.[idx]?.entityTypes &&
+                        source.entityTypes.sort().join(',') === preset.b[idx].entityTypes.sort().join(',')
+                    ))
+
+                const matchesPreset = hasMatchingGroupA && hasMatchingGroupB &&
+                    set.mode === preset.mode &&
+                    set.allow_touching === preset.allow_touching
+
+                return !matchesPreset
+            })
+
+            onChange(filteredSets)
+
+            // Remove from applied presets
+            setAppliedPresets(prev => {
+                const newSet = new Set(prev)
+                newSet.delete(presetKey)
+                return newSet
+            })
+
+            setLastAppliedPreset(null) // Clear any feedback
+            setLastRemovedPreset(presetKey)
+
+            // Clear the removed preset feedback after 3 seconds
+            setTimeout(() => setLastRemovedPreset(null), 3000)
+        } else {
+            // Apply the preset - add a new clash set
+            // Distribute files intelligently between groups when multiple files are available
+            const getFileForGroup = (_groupIndex: number, isGroupB: boolean = false): string => {
+                if (fileOptions.length === 0) return ''
+                if (fileOptions.length === 1) return fileOptions[0]
+
+                // When we have multiple files, use different files for different groups
+                if (isGroupB && fileOptions.length >= 2) {
+                    return fileOptions[1] // Use second file for group B
+                }
+                return fileOptions[0] // Use first file for group A or single file
+            }
+
+            const newSet: ClashSet = {
+                name: `${preset.name} ${value.length + 1}`,
+                a: preset.a.map(src => ({
                     ...src,
-                    file: fileOptions[0] || ''
-                }))
-            }),
-            ...(preset.mode && { mode: preset.mode }),
-            ...(preset.allow_touching !== undefined && { allow_touching: preset.allow_touching }),
-            ...(preset.tolerance !== undefined && { tolerance: preset.tolerance }),
-            ...(preset.clearance !== undefined && { clearance: preset.clearance }),
-            ...(preset.check_all !== undefined && { check_all: preset.check_all })
+                    file: getFileForGroup(0, false)
+                })),
+                ...(preset.b && {
+                    b: preset.b.map(src => ({
+                        ...src,
+                        file: getFileForGroup(0, true)
+                    }))
+                }),
+                ...(preset.mode && { mode: preset.mode }),
+                ...(preset.allow_touching !== undefined && { allow_touching: preset.allow_touching }),
+                ...(preset.tolerance !== undefined && { tolerance: preset.tolerance }),
+                ...(preset.clearance !== undefined && { clearance: preset.clearance }),
+                ...(preset.check_all !== undefined && { check_all: preset.check_all })
+            }
+            onChange([...value, newSet])
+            setExpandedSet(value.length)
+
+            // Track that this preset was applied
+            setAppliedPresets(prev => new Set(prev).add(presetKey))
+            setLastAppliedPreset(presetKey)
+
+            // Clear the last applied preset after 3 seconds for feedback
+            setTimeout(() => setLastAppliedPreset(null), 3000)
+
+            // Log which files are being used for debugging
+            if (fileOptions.length > 1) {
+                console.log(`Applied preset "${preset.name}" using:`, {
+                    groupA: getFileForGroup(0, false),
+                    groupB: preset.b ? getFileForGroup(0, true) : 'N/A'
+                })
+            }
         }
-        onChange([...value, newSet])
-        setExpandedSet(value.length)
     }
 
     const toggleEntityType = (setIdx: number, group: 'a' | 'b', sourceIdx: number, entityType: string) => {
@@ -310,643 +429,892 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
     }
 
     return (
-        <div style={{ padding: 24, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)' }}>
-            {/* Header with tabs */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-                <div>
-                    <h2 style={{ margin: 0, color: '#1e293b', fontSize: '1.5rem' }}>Clash Configuration</h2>
-                    <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '0.875rem' }}>
-                        Define clash detection sets and parameters
-                    </p>
-                </div>
-                <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', padding: 4, borderRadius: 8 }}>
-                    <button
-                        onClick={() => setActiveTab('builder')}
-                        style={{
-                            padding: '8px 16px',
-                            border: 'none',
-                            borderRadius: 6,
-                            background: activeTab === 'builder' ? '#3b82f6' : 'transparent',
-                            color: activeTab === 'builder' ? 'white' : '#64748b',
-                            cursor: 'pointer',
-                            fontSize: '0.875rem',
-                            fontWeight: activeTab === 'builder' ? '500' : '400'
-                        }}
-                    >
-                        Builder
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('presets')}
-                        style={{
-                            padding: '8px 16px',
-                            border: 'none',
-                            borderRadius: 6,
-                            background: activeTab === 'presets' ? '#3b82f6' : 'transparent',
-                            color: activeTab === 'presets' ? 'white' : '#64748b',
-                            cursor: 'pointer',
-                            fontSize: '0.875rem',
-                            fontWeight: activeTab === 'presets' ? '500' : '400'
-                        }}
-                    >
-                        Presets
-                    </button>
-                </div>
-            </div>
-
-            {activeTab === 'presets' && (
-                <div style={{ marginBottom: 24 }}>
-                    <h3 style={{ margin: '0 0 16px 0', color: '#374151' }}>Quick Start Presets</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-                        {Object.entries(PRESETS).map(([key, preset]) => {
-                            const hasGroupB = 'b' in preset && preset.b && preset.b.length > 0
-                            return (
-                                <div key={key} style={{
-                                    padding: 20,
-                                    border: '1px solid #e2e8f0',
-                                    borderRadius: 8,
-                                    background: '#fafbfc',
-                                    cursor: 'pointer',
-                                    transition: 'all 0.2s'
-                                }}
-                                    onClick={() => applyPreset(key as keyof typeof PRESETS)}
-                                    onMouseEnter={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
-                                    onMouseLeave={(e) => e.currentTarget.style.transform = 'translateY(0)'}
-                                >
-                                    <h4 style={{ margin: '0 0 8px 0', color: '#1e293b' }}>{preset.name}</h4>
-                                    <p style={{ margin: 0, color: '#64748b', fontSize: '0.875rem' }}>
-                                        {preset.a[0].entityTypes?.slice(0, 3).join(', ')}
-                                        {preset.a[0].entityTypes && preset.a[0].entityTypes.length > 3 ? '...' : ''}
-                                        {hasGroupB ? ' vs ' : ' analysis'}
-                                        {hasGroupB && preset.b?.[0].entityTypes?.slice(0, 3).join(', ')}
-                                        {hasGroupB && preset.b?.[0].entityTypes && preset.b[0].entityTypes.length > 3 ? '...' : ''}
-                                    </p>
-                                    <div style={{
-                                        marginTop: 12,
-                                        padding: '4px 8px',
-                                        background: '#dbeafe',
-                                        color: '#1d4ed8',
-                                        borderRadius: 12,
-                                        fontSize: '0.75rem',
-                                        fontWeight: '500',
-                                        display: 'inline-block'
-                                    }}>
-                                        {preset.mode}
-                                    </div>
-                                </div>
-                            )
-                        })}
+        <>
+            <style>
+                {`
+                    @keyframes pulse {
+                        0%, 100% { transform: scale(1); }
+                        50% { transform: scale(1.1); }
+                    }
+                `}
+            </style>
+            <div style={{ padding: 24, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)' }}>
+                {/* Header with tabs */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+                    <div>
+                        <h2 style={{ margin: 0, color: '#1e293b', fontSize: '1.5rem' }}>Clash Configuration</h2>
+                        <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '0.875rem' }}>
+                            Define clash detection sets and parameters
+                        </p>
                     </div>
-                </div>
-            )}
-
-            {activeTab === 'builder' && (
-                <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-                        <span style={{ color: '#64748b', fontSize: '0.875rem' }}>
-                            {value.length} clash {value.length === 1 ? 'set' : 'sets'} configured
-                        </span>
+                    <div style={{ display: 'flex', gap: 4, background: '#f1f5f9', padding: 4, borderRadius: 8 }}>
                         <button
-                            onClick={addSet}
+                            onClick={() => setActiveTab('builder')}
                             style={{
                                 padding: '8px 16px',
-                                background: '#3b82f6',
-                                color: 'white',
                                 border: 'none',
                                 borderRadius: 6,
+                                background: activeTab === 'builder' ? '#3b82f6' : 'transparent',
+                                color: activeTab === 'builder' ? 'white' : '#64748b',
                                 cursor: 'pointer',
                                 fontSize: '0.875rem',
-                                fontWeight: '500'
+                                fontWeight: activeTab === 'builder' ? '500' : '400'
                             }}
                         >
-                            + Add Clash Set
+                            Builder
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('presets')}
+                            style={{
+                                padding: '8px 16px',
+                                border: 'none',
+                                borderRadius: 6,
+                                background: activeTab === 'presets' ? '#3b82f6' : 'transparent',
+                                color: activeTab === 'presets' ? 'white' : '#64748b',
+                                cursor: 'pointer',
+                                fontSize: '0.875rem',
+                                fontWeight: activeTab === 'presets' ? '500' : '400'
+                            }}
+                        >
+                            Presets
                         </button>
                     </div>
+                </div>
 
-                    {value.length === 0 && (
-                        <div style={{
-                            textAlign: 'center',
-                            padding: 48,
-                            color: '#64748b',
-                            background: '#f8fafc',
-                            borderRadius: 8,
-                            border: '2px dashed #e2e8f0'
-                        }}>
-                            <div style={{ fontSize: '2rem', marginBottom: 12 }}>📋</div>
-                            <h3 style={{ margin: '0 0 8px 0', color: '#374151' }}>No Clash Sets Yet</h3>
-                            <p style={{ margin: 0, fontSize: '0.875rem' }}>
-                                Click "Add Clash Set" to create your first clash detection configuration
-                            </p>
-                        </div>
-                    )}
-
-                    {value.map((cs, idx) => (
-                        <div key={idx} style={{
-                            marginBottom: 16,
-                            border: '1px solid #e2e8f0',
-                            borderRadius: 8,
-                            overflow: 'hidden',
-                            background: 'white'
-                        }}>
-                            {/* Set Header */}
-                            <div style={{
-                                padding: 16,
-                                background: '#f8fafc',
-                                borderBottom: '1px solid #e2e8f0',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center'
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
-                                    <span style={{ color: '#64748b', fontSize: '0.875rem' }}>#{idx + 1}</span>
-                                    <input
-                                        value={cs.name}
-                                        onChange={e => updateSet(idx, { name: e.target.value })}
-                                        placeholder="Clash set name"
-                                        style={{
-                                            flex: 1,
-                                            padding: '6px 12px',
-                                            border: '1px solid #d1d5db',
-                                            borderRadius: 4,
-                                            fontSize: '0.875rem'
-                                        }}
-                                    />
-                                </div>
-                                <div style={{ display: 'flex', gap: 8 }}>
-                                    <button
-                                        onClick={() => setExpandedSet(expandedSet === idx ? null : idx)}
-                                        style={{
-                                            padding: '6px 12px',
-                                            background: '#f3f4f6',
-                                            border: '1px solid #d1d5db',
-                                            borderRadius: 4,
-                                            cursor: 'pointer',
-                                            fontSize: '0.75rem'
-                                        }}
-                                    >
-                                        {expandedSet === idx ? 'Collapse' : 'Expand'}
-                                    </button>
-                                    <button
-                                        onClick={() => duplicateSet(idx)}
-                                        style={{
-                                            padding: '6px 12px',
-                                            background: '#10b981',
-                                            color: 'white',
-                                            border: 'none',
-                                            borderRadius: 4,
-                                            cursor: 'pointer',
-                                            fontSize: '0.75rem'
-                                        }}
-                                    >
-                                        Duplicate
-                                    </button>
-                                    <button
-                                        onClick={() => removeSet(idx)}
-                                        style={{
-                                            padding: '6px 12px',
-                                            background: '#ef4444',
-                                            color: 'white',
-                                            border: 'none',
-                                            borderRadius: 4,
-                                            cursor: 'pointer',
-                                            fontSize: '0.75rem'
-                                        }}
-                                    >
-                                        Remove
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* Set Content */}
-                            {expandedSet === idx && (
-                                <div style={{ padding: 16 }}>
-                                    {/* Mode Settings */}
-                                    <div style={{ marginBottom: 20 }}>
-                                        <h4 style={{ margin: '0 0 12px 0', color: '#374151', fontSize: '1rem' }}>Detection Mode</h4>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 12 }}>
-                                            {[
-                                                {
-                                                    value: 'collision',
-                                                    label: 'Collision Detection',
-                                                    desc: 'Hard intersection detection',
-                                                    icon: '💥',
-                                                    details: 'Finds elements that physically occupy the same 3D space. Most restrictive but fastest detection method.'
-                                                },
-                                                {
-                                                    value: 'intersection',
-                                                    label: 'Intersection Analysis',
-                                                    desc: 'Tolerance-based detection',
-                                                    icon: '🔄',
-                                                    details: 'Finds elements that cross each other within a specified tolerance distance. Good for MEP routing analysis.'
-                                                },
-                                                {
-                                                    value: 'clearance',
-                                                    label: 'Clearance Verification',
-                                                    desc: 'Minimum spacing requirements',
-                                                    icon: '📏',
-                                                    details: 'Ensures minimum clearance distances between elements. Critical for safety and accessibility compliance.'
-                                                }
-                                            ].map(mode => (
-                                                <label key={mode.value} style={{
-                                                    display: 'flex',
-                                                    alignItems: 'flex-start',
-                                                    padding: 16,
-                                                    border: `2px solid ${cs.mode === mode.value ? '#3b82f6' : '#e2e8f0'}`,
-                                                    borderRadius: 8,
-                                                    background: cs.mode === mode.value ? '#eff6ff' : 'white',
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.2s',
-                                                    position: 'relative'
-                                                }}
-                                                    onMouseEnter={(e) => {
-                                                        if (cs.mode !== mode.value) {
-                                                            e.currentTarget.style.borderColor = '#93c5fd';
-                                                            e.currentTarget.style.background = '#f0f9ff';
-                                                        }
-                                                    }}
-                                                    onMouseLeave={(e) => {
-                                                        if (cs.mode !== mode.value) {
-                                                            e.currentTarget.style.borderColor = '#e2e8f0';
-                                                            e.currentTarget.style.background = 'white';
-                                                        }
-                                                    }}
-                                                >
-                                                    <input
-                                                        type="radio"
-                                                        name={`mode-${idx}`}
-                                                        value={mode.value}
-                                                        checked={cs.mode === mode.value}
-                                                        onChange={e => updateSet(idx, { mode: e.target.value as any })}
-                                                        style={{
-                                                            marginTop: 2,
-                                                            marginRight: 12,
-                                                            accentColor: '#3b82f6'
-                                                        }}
-                                                    />
-                                                    <div style={{ flex: 1 }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                                            <span style={{ fontSize: '1.25rem' }}>{mode.icon}</span>
-                                                            <div style={{ fontWeight: '600', color: '#1e293b' }}>{mode.label}</div>
-                                                        </div>
-                                                        <div style={{ fontSize: '0.875rem', color: '#64748b', marginBottom: 4 }}>{mode.desc}</div>
-                                                        <div style={{ fontSize: '0.75rem', color: '#6b7280', lineHeight: '1.4' }}>{mode.details}</div>
-                                                    </div>
-                                                    {cs.mode === mode.value && (
-                                                        <div style={{
-                                                            position: 'absolute',
-                                                            top: -8,
-                                                            right: -8,
-                                                            background: '#3b82f6',
-                                                            color: 'white',
-                                                            borderRadius: '50%',
-                                                            width: 20,
-                                                            height: 20,
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'center',
-                                                            fontSize: '0.75rem',
-                                                            fontWeight: 'bold'
-                                                        }}>
-                                                            ✓
-                                                        </div>
-                                                    )}
-                                                </label>
-                                            ))}
-                                        </div>
-
-                                        {/* Mode-specific help text */}
-                                        {cs.mode && (
-                                            <div style={{
-                                                marginTop: 12,
-                                                padding: 12,
-                                                background: '#f8fafc',
-                                                borderRadius: 6,
-                                                border: '1px solid #e2e8f0'
-                                            }}>
-                                                <div style={{ fontSize: '0.875rem', color: '#374151', fontWeight: '500', marginBottom: 4 }}>
-                                                    {cs.mode === 'collision' && '💥 Collision Detection'}
-                                                    {cs.mode === 'intersection' && '🔄 Intersection Detection'}
-                                                    {cs.mode === 'clearance' && '📏 Clearance Analysis'}
-                                                </div>
-                                                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                                                    {cs.mode === 'collision' && 'Finds elements that physically occupy the same 3D space. Best for detecting hard construction conflicts.'}
-                                                    {cs.mode === 'intersection' && 'Finds elements that cross each other within tolerance. Useful for MEP routing and coordination analysis.'}
-                                                    {cs.mode === 'clearance' && 'Ensures minimum spacing requirements are met. Critical for safety, accessibility, and code compliance.'}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Advanced Settings */}
-                                    {cs.mode && (
-                                        <div style={{ marginBottom: 20 }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                                                <h4 style={{ margin: 0, color: '#374151', fontSize: '1rem' }}>Advanced Settings</h4>
-                                                <span style={{
-                                                    background: '#e0f2fe',
-                                                    color: '#0277bd',
-                                                    padding: '2px 8px',
-                                                    borderRadius: 12,
-                                                    fontSize: '0.75rem',
-                                                    fontWeight: '500'
-                                                }}>
-                                                    Optional
-                                                </span>
-                                            </div>
-
-                                            <div style={{
-                                                padding: 16,
-                                                background: '#f8fafc',
-                                                borderRadius: 8,
-                                                border: '1px solid #e2e8f0'
-                                            }}>
-                                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16 }}>
-                                                    {cs.mode === 'collision' && (
-                                                        <div style={{ padding: 12, background: 'white', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                                                <span style={{ fontSize: '1rem' }}>👆</span>
-                                                                <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>Touching Elements</span>
-                                                            </div>
-                                                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={cs.allow_touching ?? false}
-                                                                    onChange={e => updateSet(idx, { allow_touching: e.target.checked })}
-                                                                    style={{ accentColor: '#3b82f6' }}
-                                                                />
-                                                                <div>
-                                                                    <div style={{ fontSize: '0.875rem', color: '#374151', fontWeight: '500' }}>Allow touching elements</div>
-                                                                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>
-                                                                        When enabled, elements that only touch (no overlap) won't be flagged as clashes
-                                                                    </div>
-                                                                </div>
-                                                            </label>
-                                                        </div>
-                                                    )}
-
-                                                    {(cs.mode === 'intersection' || cs.mode === 'clearance') && (
-                                                        <div style={{ padding: 12, background: 'white', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                                                <span style={{ fontSize: '1rem' }}>📐</span>
-                                                                <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>
-                                                                    {cs.mode === 'intersection' ? 'Tolerance Distance' : 'Minimum Clearance'}
-                                                                </span>
-                                                            </div>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                                <input
-                                                                    type="number"
-                                                                    step="0.001"
-                                                                    min="0"
-                                                                    max="10"
-                                                                    value={cs.mode === 'intersection' ? (cs.tolerance ?? 0.01) : (cs.clearance ?? 0.01)}
-                                                                    onChange={e => updateSet(idx, {
-                                                                        [cs.mode === 'intersection' ? 'tolerance' : 'clearance']: parseFloat(e.target.value) || 0
-                                                                    })}
-                                                                    style={{
-                                                                        flex: 1,
-                                                                        padding: '8px 12px',
-                                                                        border: '1px solid #d1d5db',
-                                                                        borderRadius: 4,
-                                                                        fontSize: '0.875rem',
-                                                                        fontFamily: 'monospace'
-                                                                    }}
-                                                                />
-                                                                <span style={{ fontSize: '0.875rem', color: '#64748b' }}>meters</span>
-                                                            </div>
-                                                            <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 4 }}>
-                                                                {cs.mode === 'intersection'
-                                                                    ? 'Maximum distance for elements to be considered intersecting'
-                                                                    : 'Minimum required spacing between elements'
-                                                                }
-                                                            </div>
-                                                        </div>
-                                                    )}
-
-                                                    {cs.mode && (
-                                                        <div style={{ padding: 12, background: 'white', borderRadius: 6, border: '1px solid #e2e8f0' }}>
-                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                                                <span style={{ fontSize: '1rem' }}>🔍</span>
-                                                                <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>Analysis Scope</span>
-                                                            </div>
-                                                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={cs.check_all ?? true}
-                                                                    onChange={e => updateSet(idx, { check_all: e.target.checked })}
-                                                                    style={{ accentColor: '#3b82f6' }}
-                                                                />
-                                                                <div>
-                                                                    <div style={{ fontSize: '0.875rem', color: '#374151', fontWeight: '500' }}>Check all combinations</div>
-                                                                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>
-                                                                        When enabled, compares every element against every other element in scope
-                                                                    </div>
-                                                                </div>
-                                                            </label>
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                {/* Performance Tip */}
-                                                <div style={{
-                                                    marginTop: 16,
-                                                    padding: 12,
-                                                    background: '#fef3c7',
-                                                    borderRadius: 6,
-                                                    border: '1px solid #f59e0b'
-                                                }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                                        <span style={{ fontSize: '1rem' }}>💡</span>
-                                                        <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#92400e' }}>Performance Tip</span>
-                                                    </div>
-                                                    <div style={{ fontSize: '0.75rem', color: '#92400e' }}>
-                                                        {cs.mode === 'collision' && 'Collision detection is fastest but most restrictive. Use for critical construction conflicts.'}
-                                                        {cs.mode === 'intersection' && 'Intersection detection with small tolerance (0.01m) balances speed and thoroughness for coordination.'}
-                                                        {cs.mode === 'clearance' && 'Clearance analysis is most thorough but slowest. Use for final safety and accessibility validation.'}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Group Configuration Guide */}
-                                    <div style={{
-                                        marginBottom: 20,
-                                        padding: 16,
-                                        background: '#f0f9ff',
-                                        borderRadius: 8,
-                                        border: '1px solid #0ea5e9'
-                                    }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                            <span style={{ fontSize: '1rem' }}>📋</span>
-                                            <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#0c4a6e' }}>Group Configuration</span>
-                                        </div>
-                                        <div style={{ fontSize: '0.75rem', color: '#075985', lineHeight: '1.5' }}>
-                                            <strong>Group A:</strong> Primary elements to check for clashes<br />
-                                            <strong>Group B:</strong> Secondary elements (optional). If configured, checks clashes <em>between</em> Group A and Group B. If not configured, checks clashes <em>within</em> Group A only.<br />
-                                            <em>Example: To check clashes between structural beams and MEP pipes, put beams in Group A and pipes in Group B.</em>
-                                        </div>
-                                    </div>
-
-                                    {/* Group Configuration */}
-                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                                        {(['a', 'b'] as const).map(group => (
-                                            <div key={group}>
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                                                    <h4 style={{ margin: 0, color: '#374151', fontSize: '1rem' }}>
-                                                        Group {group.toUpperCase()}
-                                                        {group === 'b' && <span style={{ color: '#64748b', fontSize: '0.875rem', fontWeight: 'normal' }}> (Optional)</span>}
-                                                    </h4>
-                                                    <button
-                                                        onClick={() => addSource(idx, group)}
-                                                        style={{
-                                                            padding: '4px 8px',
-                                                            background: '#f3f4f6',
-                                                            border: '1px solid #d1d5db',
-                                                            borderRadius: 4,
-                                                            cursor: 'pointer',
-                                                            fontSize: '0.75rem'
-                                                        }}
-                                                    >
-                                                        + Add Source
-                                                    </button>
-                                                </div>
-
-                                                {((cs[group] || []) as ClashSource[]).length === 0 && (
-                                                    <div style={{
-                                                        padding: 20,
-                                                        textAlign: 'center',
-                                                        color: '#64748b',
-                                                        background: '#f8fafc',
-                                                        borderRadius: 6,
-                                                        border: '1px dashed #e2e8f0'
-                                                    }}>
-                                                        No sources added yet
-                                                    </div>
-                                                )}
-
-                                                {((cs[group] || []) as ClashSource[]).map((src, sIdx) => (
-                                                    <div key={sIdx} style={{
-                                                        padding: 12,
-                                                        border: '1px solid #e2e8f0',
-                                                        borderRadius: 6,
-                                                        marginBottom: 8,
-                                                        background: '#fafbfc'
-                                                    }}>
-                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                                                            <span style={{ fontSize: '0.875rem', color: '#374151', fontWeight: '500' }}>
-                                                                Source {sIdx + 1}
-                                                            </span>
-                                                            <button
-                                                                onClick={() => removeSource(idx, group, sIdx)}
-                                                                style={{
-                                                                    padding: '2px 6px',
-                                                                    background: '#ef4444',
-                                                                    color: 'white',
-                                                                    border: 'none',
-                                                                    borderRadius: 3,
-                                                                    cursor: 'pointer',
-                                                                    fontSize: '0.75rem'
-                                                                }}
-                                                            >
-                                                                ×
-                                                            </button>
-                                                        </div>
-
-                                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-                                                            <div>
-                                                                <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginBottom: 4 }}>
-                                                                    IFC File
-                                                                </label>
-                                                                <select
-                                                                    value={src.file}
-                                                                    onChange={e => updateSource(idx, group, sIdx, { file: e.target.value })}
-                                                                    style={{
-                                                                        width: '100%',
-                                                                        padding: '6px 8px',
-                                                                        border: '1px solid #d1d5db',
-                                                                        borderRadius: 4,
-                                                                        fontSize: '0.875rem'
-                                                                    }}
-                                                                >
-                                                                    {fileOptions.length === 0 && <option value="">(no files)</option>}
-                                                                    {fileOptions.map(n => <option key={n} value={n}>{n}</option>)}
-                                                                </select>
-                                                            </div>
-                                                            <div>
-                                                                <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginBottom: 4 }}>
-                                                                    Mode
-                                                                </label>
-                                                                <select
-                                                                    value={src.mode || 'i'}
-                                                                    onChange={e => updateSource(idx, group, sIdx, { mode: (e.target.value as 'i' | 'e') })}
-                                                                    style={{
-                                                                        width: '100%',
-                                                                        padding: '6px 8px',
-                                                                        border: '1px solid #d1d5db',
-                                                                        borderRadius: 4,
-                                                                        fontSize: '0.875rem'
-                                                                    }}
-                                                                >
-                                                                    <option value="i">Include</option>
-                                                                    <option value="e">Exclude</option>
-                                                                </select>
-                                                            </div>
-                                                        </div>
-
-                                                        <div>
-                                                            <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginBottom: 4 }}>
-                                                                Entity Types
-                                                            </label>
-                                                            <button
-                                                                onClick={() => setShowEntitySelector({ setIdx: idx, group, sourceIdx: sIdx })}
-                                                                style={{
-                                                                    width: '100%',
-                                                                    padding: '8px 12px',
-                                                                    background: '#f8fafc',
-                                                                    border: '1px solid #d1d5db',
-                                                                    borderRadius: 4,
-                                                                    cursor: 'pointer',
-                                                                    textAlign: 'left',
-                                                                    fontSize: '0.875rem',
-                                                                    color: '#374151'
-                                                                }}
-                                                            >
-                                                                {getEntityTypeDisplay(src.entityTypes)}
-                                                            </button>
-                                                        </div>
-
-                                                        {src.selector && (
-                                                            <div style={{ marginTop: 8 }}>
-                                                                <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginBottom: 4 }}>
-                                                                    Custom Selector
-                                                                </label>
-                                                                <input
-                                                                    value={src.selector}
-                                                                    onChange={e => updateSource(idx, group, sIdx, { selector: e.target.value })}
-                                                                    placeholder="e.g., IfcWall,IfcDoor"
-                                                                    style={{
-                                                                        width: '100%',
-                                                                        padding: '6px 8px',
-                                                                        border: '1px solid #d1d5db',
-                                                                        borderRadius: 4,
-                                                                        fontSize: '0.875rem'
-                                                                    }}
-                                                                />
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        ))}
-                                    </div>
+                {activeTab === 'presets' && (
+                    <div style={{ marginBottom: 24 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                            <h3 style={{ margin: 0, color: '#374151' }}>Quick Start Presets</h3>
+                            {appliedPresets.size > 0 && (
+                                <div style={{
+                                    padding: '6px 12px',
+                                    background: '#dcfce7',
+                                    color: '#166534',
+                                    borderRadius: 6,
+                                    fontSize: '0.875rem',
+                                    fontWeight: '500',
+                                    border: '1px solid #16a34a'
+                                }}>
+                                    ✅ {appliedPresets.size} preset{appliedPresets.size > 1 ? 's' : ''} active
                                 </div>
                             )}
                         </div>
-                    ))}
-                </>
-            )}
 
-            {renderEntitySelector()}
-        </div>
+                        {lastAppliedPreset && (
+                            <div style={{
+                                marginBottom: 16,
+                                padding: 12,
+                                background: '#fef3c7',
+                                borderRadius: 8,
+                                border: '1px solid #f59e0b',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8
+                            }}>
+                                <span style={{ fontSize: '1rem' }}>✨</span>
+                                <div>
+                                    <div style={{ fontSize: '0.875rem', fontWeight: '500', color: '#92400e' }}>
+                                        Preset Applied: {PRESETS[lastAppliedPreset].name}
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: '#92400e' }}>
+                                        New clash set added to your configuration
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {lastRemovedPreset && (
+                            <div style={{
+                                marginBottom: 16,
+                                padding: 12,
+                                background: '#fef2f2',
+                                borderRadius: 8,
+                                border: '1px solid #dc2626',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8
+                            }}>
+                                <span style={{ fontSize: '1rem' }}>🗑️</span>
+                                <div>
+                                    <div style={{ fontSize: '0.875rem', fontWeight: '500', color: '#991b1b' }}>
+                                        Preset Removed: {PRESETS[lastRemovedPreset].name}
+                                    </div>
+                                    <div style={{ fontSize: '0.75rem', color: '#dc2626' }}>
+                                        Clash set removed from your configuration
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+                            {Object.entries(PRESETS).map(([key, preset]) => {
+                                const hasGroupB = 'b' in preset && preset.b && preset.b.length > 0
+                                const isActive = appliedPresets.has(key)
+                                const isJustApplied = lastAppliedPreset === key
+                                const isJustRemoved = lastRemovedPreset === key
+
+                                return (
+                                    <div key={key} style={{
+                                        padding: 20,
+                                        border: `2px solid ${isActive ? '#16a34a' : isJustApplied ? '#f59e0b' : isJustRemoved ? '#dc2626' : '#e2e8f0'}`,
+                                        borderRadius: 8,
+                                        background: isActive ? '#f0fdf4' : isJustApplied ? '#fffbeb' : isJustRemoved ? '#fef2f2' : '#fafbfc',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                        position: 'relative',
+                                        boxShadow: isActive ? '0 0 0 3px rgba(22, 163, 74, 0.1)' : isJustRemoved ? '0 0 0 3px rgba(220, 38, 38, 0.1)' : 'none'
+                                    }}
+                                        onClick={() => applyPreset(key as keyof typeof PRESETS)}
+                                        onMouseEnter={(e) => {
+                                            if (!isActive && !isJustRemoved) {
+                                                e.currentTarget.style.transform = 'translateY(-2px)'
+                                                e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                                            }
+                                        }}
+                                        onMouseLeave={(e) => {
+                                            if (!isActive && !isJustRemoved) {
+                                                e.currentTarget.style.transform = 'translateY(0)'
+                                                e.currentTarget.style.boxShadow = 'none'
+                                            }
+                                        }}
+                                    >
+                                        {isActive && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                top: -10,
+                                                right: -10,
+                                                background: '#16a34a',
+                                                color: 'white',
+                                                borderRadius: '50%',
+                                                width: 24,
+                                                height: 24,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 'bold',
+                                                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)'
+                                            }}>
+                                                ✓
+                                            </div>
+                                        )}
+
+                                        {isJustApplied && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                top: -10,
+                                                right: -10,
+                                                background: '#f59e0b',
+                                                color: 'white',
+                                                borderRadius: '50%',
+                                                width: 24,
+                                                height: 24,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 'bold',
+                                                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                                                animation: 'pulse 2s infinite'
+                                            }}>
+                                                ✨
+                                            </div>
+                                        )}
+
+                                        {isJustRemoved && (
+                                            <div style={{
+                                                position: 'absolute',
+                                                top: -10,
+                                                right: -10,
+                                                background: '#dc2626',
+                                                color: 'white',
+                                                borderRadius: '50%',
+                                                width: 24,
+                                                height: 24,
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                justifyContent: 'center',
+                                                fontSize: '0.75rem',
+                                                fontWeight: 'bold',
+                                                boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
+                                                animation: 'pulse 2s infinite'
+                                            }}>
+                                                🗑️
+                                            </div>
+                                        )}
+
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                            <h4 style={{
+                                                margin: 0,
+                                                color: isActive ? '#166534' : '#1e293b',
+                                                fontWeight: isActive ? '600' : '500'
+                                            }}>
+                                                {preset.name}
+                                            </h4>
+                                            {isActive && (
+                                                <span style={{
+                                                    padding: '2px 6px',
+                                                    background: '#dcfce7',
+                                                    color: '#166534',
+                                                    borderRadius: 10,
+                                                    fontSize: '0.625rem',
+                                                    fontWeight: '600'
+                                                }}>
+                                                    ACTIVE
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <p style={{
+                                            margin: 0,
+                                            color: isActive ? '#166534' : '#64748b',
+                                            fontSize: '0.875rem'
+                                        }}>
+                                            {preset.a[0].entityTypes?.slice(0, 3).join(', ')}
+                                            {preset.a[0].entityTypes && preset.a[0].entityTypes.length > 3 ? '...' : ''}
+                                            {hasGroupB ? ' vs ' : ' analysis'}
+                                            {hasGroupB && preset.b?.[0].entityTypes?.slice(0, 3).join(', ')}
+                                            {hasGroupB && preset.b?.[0].entityTypes && preset.b[0].entityTypes.length > 3 ? '...' : ''}
+                                        </p>
+
+                                        {/* Show file distribution info when multiple files are available */}
+                                        {hasGroupB && fileOptions.length > 1 && (
+                                            <p style={{
+                                                margin: '4px 0 0 0',
+                                                color: isActive ? '#166534' : '#6b7280',
+                                                fontSize: '0.75rem',
+                                                fontStyle: 'italic'
+                                            }}>
+                                                📁 Model 1 → Group A, Model 2 → Group B
+                                            </p>
+                                        )}
+
+                                        <div style={{
+                                            marginTop: 12,
+                                            padding: '4px 8px',
+                                            background: isActive ? '#bbf7d0' : '#dbeafe',
+                                            color: isActive ? '#166534' : '#1d4ed8',
+                                            borderRadius: 12,
+                                            fontSize: '0.75rem',
+                                            fontWeight: '500',
+                                            display: 'inline-block'
+                                        }}>
+                                            {preset.mode}
+                                        </div>
+
+                                        {isActive && (
+                                            <div style={{
+                                                marginTop: 8,
+                                                fontSize: '0.75rem',
+                                                color: '#166534',
+                                                fontStyle: 'italic'
+                                            }}>
+                                                ✓ Applied to current configuration
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'builder' && (
+                    <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <span style={{ color: '#64748b', fontSize: '0.875rem' }}>
+                                {value.length} clash {value.length === 1 ? 'set' : 'sets'} configured
+                            </span>
+                            <button
+                                onClick={addSet}
+                                style={{
+                                    padding: '8px 16px',
+                                    background: '#3b82f6',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: 6,
+                                    cursor: 'pointer',
+                                    fontSize: '0.875rem',
+                                    fontWeight: '500'
+                                }}
+                            >
+                                + Add Clash Set
+                            </button>
+                        </div>
+
+                        {/* Active Presets Summary */}
+                        {appliedPresets.size > 0 && (
+                            <div style={{
+                                marginBottom: 20,
+                                padding: 16,
+                                background: '#f0fdf4',
+                                borderRadius: 8,
+                                border: '1px solid #bbf7d0'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                    <span style={{ fontSize: '1rem' }}>🎯</span>
+                                    <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#166534' }}>
+                                        Active Presets ({appliedPresets.size})
+                                    </span>
+                                </div>
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                    {Array.from(appliedPresets).map(presetKey => {
+                                        const preset = PRESETS[presetKey]
+                                        return (
+                                            <div key={presetKey} style={{
+                                                padding: '6px 12px',
+                                                background: '#dcfce7',
+                                                color: '#166534',
+                                                borderRadius: 16,
+                                                fontSize: '0.75rem',
+                                                fontWeight: '500',
+                                                border: '1px solid #bbf7d0',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 6
+                                            }}>
+                                                <span>✓</span>
+                                                {preset.name}
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                                <div style={{
+                                    marginTop: 8,
+                                    fontSize: '0.75rem',
+                                    color: '#166534'
+                                }}>
+                                    These presets have been applied and are active in your current configuration.
+                                </div>
+                            </div>
+                        )}
+
+                        {value.length === 0 && (
+                            <div style={{
+                                textAlign: 'center',
+                                padding: 48,
+                                color: '#64748b',
+                                background: '#f8fafc',
+                                borderRadius: 8,
+                                border: '2px dashed #e2e8f0'
+                            }}>
+                                <div style={{ fontSize: '2rem', marginBottom: 12 }}>📋</div>
+                                <h3 style={{ margin: '0 0 8px 0', color: '#374151' }}>No Clash Sets Yet</h3>
+                                <p style={{ margin: 0, fontSize: '0.875rem' }}>
+                                    Click "Add Clash Set" to create your first clash detection configuration
+                                </p>
+                            </div>
+                        )}
+
+                        {value.map((cs, idx) => (
+                            <div key={idx} style={{
+                                marginBottom: 16,
+                                border: '1px solid #e2e8f0',
+                                borderRadius: 8,
+                                overflow: 'hidden',
+                                background: 'white'
+                            }}>
+                                {/* Set Header */}
+                                <div style={{
+                                    padding: 16,
+                                    background: '#f8fafc',
+                                    borderBottom: '1px solid #e2e8f0',
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center'
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                                        <span style={{ color: '#64748b', fontSize: '0.875rem' }}>#{idx + 1}</span>
+                                        <input
+                                            value={cs.name}
+                                            onChange={e => updateSet(idx, { name: e.target.value })}
+                                            placeholder="Clash set name"
+                                            style={{
+                                                flex: 1,
+                                                padding: '6px 12px',
+                                                border: '1px solid #d1d5db',
+                                                borderRadius: 4,
+                                                fontSize: '0.875rem'
+                                            }}
+                                        />
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8 }}>
+                                        <button
+                                            onClick={() => setExpandedSet(expandedSet === idx ? null : idx)}
+                                            style={{
+                                                padding: '6px 12px',
+                                                background: '#f3f4f6',
+                                                border: '1px solid #d1d5db',
+                                                borderRadius: 4,
+                                                cursor: 'pointer',
+                                                fontSize: '0.75rem'
+                                            }}
+                                        >
+                                            {expandedSet === idx ? 'Collapse' : 'Expand'}
+                                        </button>
+                                        <button
+                                            onClick={() => duplicateSet(idx)}
+                                            style={{
+                                                padding: '6px 12px',
+                                                background: '#10b981',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: 4,
+                                                cursor: 'pointer',
+                                                fontSize: '0.75rem'
+                                            }}
+                                        >
+                                            Duplicate
+                                        </button>
+                                        <button
+                                            onClick={() => removeSet(idx)}
+                                            style={{
+                                                padding: '6px 12px',
+                                                background: '#ef4444',
+                                                color: 'white',
+                                                border: 'none',
+                                                borderRadius: 4,
+                                                cursor: 'pointer',
+                                                fontSize: '0.75rem'
+                                            }}
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Set Content */}
+                                {expandedSet === idx && (
+                                    <div style={{ padding: 16 }}>
+                                        {/* Mode Settings */}
+                                        <div style={{ marginBottom: 20 }}>
+                                            <h4 style={{ margin: '0 0 12px 0', color: '#374151', fontSize: '1rem' }}>Detection Mode</h4>
+                                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 12 }}>
+                                                {[
+                                                    {
+                                                        value: 'collision',
+                                                        label: 'Collision Detection',
+                                                        desc: 'Hard intersection detection',
+                                                        icon: '💥',
+                                                        details: 'Finds elements that physically occupy the same 3D space. Most restrictive but fastest detection method.'
+                                                    },
+                                                    {
+                                                        value: 'intersection',
+                                                        label: 'Intersection Analysis',
+                                                        desc: 'Tolerance-based detection',
+                                                        icon: '🔄',
+                                                        details: 'Finds elements that cross each other within a specified tolerance distance. Good for MEP routing analysis.'
+                                                    },
+                                                    {
+                                                        value: 'clearance',
+                                                        label: 'Clearance Verification',
+                                                        desc: 'Minimum spacing requirements',
+                                                        icon: '📏',
+                                                        details: 'Ensures minimum clearance distances between elements. Critical for safety and accessibility compliance.'
+                                                    }
+                                                ].map(mode => (
+                                                    <label key={mode.value} style={{
+                                                        display: 'flex',
+                                                        alignItems: 'flex-start',
+                                                        padding: 16,
+                                                        border: `2px solid ${cs.mode === mode.value ? '#3b82f6' : '#e2e8f0'}`,
+                                                        borderRadius: 8,
+                                                        background: cs.mode === mode.value ? '#eff6ff' : 'white',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s',
+                                                        position: 'relative'
+                                                    }}
+                                                        onMouseEnter={(e) => {
+                                                            if (cs.mode !== mode.value) {
+                                                                e.currentTarget.style.borderColor = '#93c5fd';
+                                                                e.currentTarget.style.background = '#f0f9ff';
+                                                            }
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            if (cs.mode !== mode.value) {
+                                                                e.currentTarget.style.borderColor = '#e2e8f0';
+                                                                e.currentTarget.style.background = 'white';
+                                                            }
+                                                        }}
+                                                    >
+                                                        <input
+                                                            type="radio"
+                                                            name={`mode-${idx}`}
+                                                            value={mode.value}
+                                                            checked={cs.mode === mode.value}
+                                                            onChange={e => updateSet(idx, { mode: e.target.value as any })}
+                                                            style={{
+                                                                marginTop: 2,
+                                                                marginRight: 12,
+                                                                accentColor: '#3b82f6'
+                                                            }}
+                                                        />
+                                                        <div style={{ flex: 1 }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                                                <span style={{ fontSize: '1.25rem' }}>{mode.icon}</span>
+                                                                <div style={{ fontWeight: '600', color: '#1e293b' }}>{mode.label}</div>
+                                                            </div>
+                                                            <div style={{ fontSize: '0.875rem', color: '#64748b', marginBottom: 4 }}>{mode.desc}</div>
+                                                            <div style={{ fontSize: '0.75rem', color: '#6b7280', lineHeight: '1.4' }}>{mode.details}</div>
+                                                        </div>
+                                                        {cs.mode === mode.value && (
+                                                            <div style={{
+                                                                position: 'absolute',
+                                                                top: -8,
+                                                                right: -8,
+                                                                background: '#3b82f6',
+                                                                color: 'white',
+                                                                borderRadius: '50%',
+                                                                width: 20,
+                                                                height: 20,
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center',
+                                                                fontSize: '0.75rem',
+                                                                fontWeight: 'bold'
+                                                            }}>
+                                                                ✓
+                                                            </div>
+                                                        )}
+                                                    </label>
+                                                ))}
+                                            </div>
+
+                                            {/* Mode-specific help text */}
+                                            {cs.mode && (
+                                                <div style={{
+                                                    marginTop: 12,
+                                                    padding: 12,
+                                                    background: '#f8fafc',
+                                                    borderRadius: 6,
+                                                    border: '1px solid #e2e8f0'
+                                                }}>
+                                                    <div style={{ fontSize: '0.875rem', color: '#374151', fontWeight: '500', marginBottom: 4 }}>
+                                                        {cs.mode === 'collision' && '💥 Collision Detection'}
+                                                        {cs.mode === 'intersection' && '🔄 Intersection Detection'}
+                                                        {cs.mode === 'clearance' && '📏 Clearance Analysis'}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                                                        {cs.mode === 'collision' && 'Finds elements that physically occupy the same 3D space. Best for detecting hard construction conflicts.'}
+                                                        {cs.mode === 'intersection' && 'Finds elements that cross each other within tolerance. Useful for MEP routing and coordination analysis.'}
+                                                        {cs.mode === 'clearance' && 'Ensures minimum spacing requirements are met. Critical for safety, accessibility, and code compliance.'}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Advanced Settings */}
+                                        {cs.mode && (
+                                            <div style={{ marginBottom: 20 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                                                    <h4 style={{ margin: 0, color: '#374151', fontSize: '1rem' }}>Advanced Settings</h4>
+                                                    <span style={{
+                                                        background: '#e0f2fe',
+                                                        color: '#0277bd',
+                                                        padding: '2px 8px',
+                                                        borderRadius: 12,
+                                                        fontSize: '0.75rem',
+                                                        fontWeight: '500'
+                                                    }}>
+                                                        Optional
+                                                    </span>
+                                                </div>
+
+                                                <div style={{
+                                                    padding: 16,
+                                                    background: '#f8fafc',
+                                                    borderRadius: 8,
+                                                    border: '1px solid #e2e8f0'
+                                                }}>
+                                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: 16 }}>
+                                                        {cs.mode === 'collision' && (
+                                                            <div style={{ padding: 12, background: 'white', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                                                    <span style={{ fontSize: '1rem' }}>👆</span>
+                                                                    <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>Touching Elements</span>
+                                                                </div>
+                                                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={cs.allow_touching ?? false}
+                                                                        onChange={e => updateSet(idx, { allow_touching: e.target.checked })}
+                                                                        style={{ accentColor: '#3b82f6' }}
+                                                                    />
+                                                                    <div>
+                                                                        <div style={{ fontSize: '0.875rem', color: '#374151', fontWeight: '500' }}>Allow touching elements</div>
+                                                                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>
+                                                                            When enabled, elements that only touch (no overlap) won't be flagged as clashes
+                                                                        </div>
+                                                                    </div>
+                                                                </label>
+                                                            </div>
+                                                        )}
+
+                                                        {(cs.mode === 'intersection' || cs.mode === 'clearance') && (
+                                                            <div style={{ padding: 12, background: 'white', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                                                    <span style={{ fontSize: '1rem' }}>📐</span>
+                                                                    <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>
+                                                                        {cs.mode === 'intersection' ? 'Tolerance Distance' : 'Minimum Clearance'}
+                                                                    </span>
+                                                                </div>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                                    <input
+                                                                        type="number"
+                                                                        step="0.001"
+                                                                        min="0"
+                                                                        max="10"
+                                                                        value={cs.mode === 'intersection' ? (cs.tolerance ?? 0.01) : (cs.clearance ?? 0.01)}
+                                                                        onChange={e => updateSet(idx, {
+                                                                            [cs.mode === 'intersection' ? 'tolerance' : 'clearance']: parseFloat(e.target.value) || 0
+                                                                        })}
+                                                                        style={{
+                                                                            flex: 1,
+                                                                            padding: '8px 12px',
+                                                                            border: '1px solid #d1d5db',
+                                                                            borderRadius: 4,
+                                                                            fontSize: '0.875rem',
+                                                                            fontFamily: 'monospace'
+                                                                        }}
+                                                                    />
+                                                                    <span style={{ fontSize: '0.875rem', color: '#64748b' }}>meters</span>
+                                                                </div>
+                                                                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 4 }}>
+                                                                    {cs.mode === 'intersection'
+                                                                        ? 'Maximum distance for elements to be considered intersecting'
+                                                                        : 'Minimum required spacing between elements'
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                        )}
+
+                                                        {cs.mode && (
+                                                            <div style={{ padding: 12, background: 'white', borderRadius: 6, border: '1px solid #e2e8f0' }}>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                                                    <span style={{ fontSize: '1rem' }}>🔍</span>
+                                                                    <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>Analysis Scope</span>
+                                                                </div>
+                                                                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={cs.check_all ?? true}
+                                                                        onChange={e => updateSet(idx, { check_all: e.target.checked })}
+                                                                        style={{ accentColor: '#3b82f6' }}
+                                                                    />
+                                                                    <div>
+                                                                        <div style={{ fontSize: '0.875rem', color: '#374151', fontWeight: '500' }}>Check all combinations</div>
+                                                                        <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: 2 }}>
+                                                                            When enabled, compares every element against every other element in scope
+                                                                        </div>
+                                                                    </div>
+                                                                </label>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Performance Tip */}
+                                                    <div style={{
+                                                        marginTop: 16,
+                                                        padding: 12,
+                                                        background: '#fef3c7',
+                                                        borderRadius: 6,
+                                                        border: '1px solid #f59e0b'
+                                                    }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                                            <span style={{ fontSize: '1rem' }}>💡</span>
+                                                            <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#92400e' }}>Performance Tip</span>
+                                                        </div>
+                                                        <div style={{ fontSize: '0.75rem', color: '#92400e' }}>
+                                                            {cs.mode === 'collision' && 'Collision detection is fastest but most restrictive. Use for critical construction conflicts.'}
+                                                            {cs.mode === 'intersection' && 'Intersection detection with small tolerance (0.01m) balances speed and thoroughness for coordination.'}
+                                                            {cs.mode === 'clearance' && 'Clearance analysis is most thorough but slowest. Use for final safety and accessibility validation.'}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Group Configuration Guide */}
+                                        <div style={{
+                                            marginBottom: 20,
+                                            padding: 16,
+                                            background: '#f0f9ff',
+                                            borderRadius: 8,
+                                            border: '1px solid #0ea5e9'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                                                <span style={{ fontSize: '1rem' }}>📋</span>
+                                                <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#0c4a6e' }}>Group Configuration</span>
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: '#075985', lineHeight: '1.5' }}>
+                                                <strong>Group A:</strong> Primary elements to check for clashes<br />
+                                                <strong>Group B:</strong> Secondary elements (optional). If configured, checks clashes <em>between</em> Group A and Group B. If not configured, checks clashes <em>within</em> Group A only.<br />
+                                                <em>Example: To check clashes between structural beams and MEP pipes, put beams in Group A and pipes in Group B.</em>
+                                            </div>
+                                        </div>
+
+                                        {/* Group Configuration */}
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                                            {(['a', 'b'] as const).map(group => (
+                                                <div key={group}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                                        <h4 style={{ margin: 0, color: '#374151', fontSize: '1rem' }}>
+                                                            Group {group.toUpperCase()}
+                                                            {group === 'b' && <span style={{ color: '#64748b', fontSize: '0.875rem', fontWeight: 'normal' }}> (Optional)</span>}
+                                                        </h4>
+                                                        <button
+                                                            onClick={() => addSource(idx, group)}
+                                                            style={{
+                                                                padding: '4px 8px',
+                                                                background: '#f3f4f6',
+                                                                border: '1px solid #d1d5db',
+                                                                borderRadius: 4,
+                                                                cursor: 'pointer',
+                                                                fontSize: '0.75rem'
+                                                            }}
+                                                        >
+                                                            + Add Source
+                                                        </button>
+                                                    </div>
+
+                                                    {((cs[group] || []) as ClashSource[]).length === 0 && (
+                                                        <div style={{
+                                                            padding: 20,
+                                                            textAlign: 'center',
+                                                            color: '#64748b',
+                                                            background: '#f8fafc',
+                                                            borderRadius: 6,
+                                                            border: '1px dashed #e2e8f0'
+                                                        }}>
+                                                            No sources added yet
+                                                        </div>
+                                                    )}
+
+                                                    {((cs[group] || []) as ClashSource[]).map((src, sIdx) => (
+                                                        <div key={sIdx} style={{
+                                                            padding: 12,
+                                                            border: '1px solid #e2e8f0',
+                                                            borderRadius: 6,
+                                                            marginBottom: 8,
+                                                            background: '#fafbfc'
+                                                        }}>
+                                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                                                                <span style={{ fontSize: '0.875rem', color: '#374151', fontWeight: '500' }}>
+                                                                    Source {sIdx + 1}
+                                                                </span>
+                                                                <button
+                                                                    onClick={() => removeSource(idx, group, sIdx)}
+                                                                    style={{
+                                                                        padding: '2px 6px',
+                                                                        background: '#ef4444',
+                                                                        color: 'white',
+                                                                        border: 'none',
+                                                                        borderRadius: 3,
+                                                                        cursor: 'pointer',
+                                                                        fontSize: '0.75rem'
+                                                                    }}
+                                                                >
+                                                                    ×
+                                                                </button>
+                                                            </div>
+
+                                                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                                                                <div>
+                                                                    <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginBottom: 4 }}>
+                                                                        IFC File
+                                                                    </label>
+                                                                    <select
+                                                                        value={src.file}
+                                                                        onChange={e => updateSource(idx, group, sIdx, { file: e.target.value })}
+                                                                        style={{
+                                                                            width: '100%',
+                                                                            padding: '6px 8px',
+                                                                            border: '1px solid #d1d5db',
+                                                                            borderRadius: 4,
+                                                                            fontSize: '0.875rem'
+                                                                        }}
+                                                                    >
+                                                                        {fileOptions.length === 0 && <option value="">(no files)</option>}
+                                                                        {fileOptions.map(n => <option key={n} value={n}>{n}</option>)}
+                                                                    </select>
+                                                                </div>
+                                                                <div>
+                                                                    <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginBottom: 4 }}>
+                                                                        Mode
+                                                                    </label>
+                                                                    <select
+                                                                        value={src.mode || 'i'}
+                                                                        onChange={e => updateSource(idx, group, sIdx, { mode: (e.target.value as 'i' | 'e') })}
+                                                                        style={{
+                                                                            width: '100%',
+                                                                            padding: '6px 8px',
+                                                                            border: '1px solid #d1d5db',
+                                                                            borderRadius: 4,
+                                                                            fontSize: '0.875rem'
+                                                                        }}
+                                                                    >
+                                                                        <option value="i">Include</option>
+                                                                        <option value="e">Exclude</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+
+                                                            <div>
+                                                                <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginBottom: 4 }}>
+                                                                    Entity Types
+                                                                </label>
+                                                                <button
+                                                                    onClick={() => setShowEntitySelector({ setIdx: idx, group, sourceIdx: sIdx })}
+                                                                    style={{
+                                                                        width: '100%',
+                                                                        padding: '8px 12px',
+                                                                        background: '#f8fafc',
+                                                                        border: '1px solid #d1d5db',
+                                                                        borderRadius: 4,
+                                                                        cursor: 'pointer',
+                                                                        textAlign: 'left',
+                                                                        fontSize: '0.875rem',
+                                                                        color: '#374151'
+                                                                    }}
+                                                                >
+                                                                    {getEntityTypeDisplay(src.entityTypes)}
+                                                                </button>
+                                                            </div>
+
+                                                            {src.selector && (
+                                                                <div style={{ marginTop: 8 }}>
+                                                                    <label style={{ display: 'block', fontSize: '0.75rem', color: '#64748b', marginBottom: 4 }}>
+                                                                        Custom Selector
+                                                                    </label>
+                                                                    <input
+                                                                        value={src.selector}
+                                                                        onChange={e => updateSource(idx, group, sIdx, { selector: e.target.value })}
+                                                                        placeholder="e.g., IfcWall,IfcDoor"
+                                                                        style={{
+                                                                            width: '100%',
+                                                                            padding: '6px 8px',
+                                                                            border: '1px solid #d1d5db',
+                                                                            borderRadius: 4,
+                                                                            fontSize: '0.875rem'
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </>
+                )}
+
+                {renderEntitySelector()}
+            </div>
+        </>
     )
 }
 

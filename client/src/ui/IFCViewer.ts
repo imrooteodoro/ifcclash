@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { IfcAPI } from "web-ifc";
 import { Picker } from "./components/Picker";
+import { ViewCube } from "./ViewCube";
 import { GeometryData, IFCModel, PlacedGeometry } from "./types";
 
 export class IFCViewer {
@@ -25,6 +26,7 @@ export class IFCViewer {
     private pdfImagePaths: string[];
     private pdfPreviewWindow: HTMLDivElement;
     private lastHoveredModel: IFCModel | null = null;
+    private viewCube: ViewCube | null = null;
 
     // Clash isolation state
     private guidIndex: Map<string, THREE.Object3D[]> = new Map();
@@ -33,6 +35,8 @@ export class IFCViewer {
     private currentZoomAnimation: number | null = null;
     private initialCameraPosition: THREE.Vector3 | null = null;
     private initialCameraTarget: THREE.Vector3 | null = null;
+
+
 
     constructor(container: HTMLElement) {
         this.container = container;
@@ -128,9 +132,23 @@ export class IFCViewer {
             this.renderer.shadowMap.enabled = false;
             this.container.appendChild(this.renderer.domElement);
 
-            // Setup controls
-            this.controls.enableDamping = true;
-            this.controls.dampingFactor = 0.05;
+            // Setup controls with enhanced zoom settings
+            this.controls.enableDamping = false; // Disable damping for immediate stop on mouse release
+
+            // Enhanced zoom controls
+            this.controls.enableZoom = true;
+            this.controls.zoomSpeed = 0.8;
+            this.controls.minDistance = 1;
+            this.controls.maxDistance = 1000;
+
+            // Pan and rotate settings
+            this.controls.enablePan = true;
+            this.controls.enableRotate = true;
+            this.controls.rotateSpeed = 0.5;
+            this.controls.panSpeed = 0.8;
+
+            // Enhanced keyboard controls for additional navigation
+            this.setupKeyboardNavigation();
 
             // Setup grid and axes
             this.grid.visible = false;
@@ -149,7 +167,6 @@ export class IFCViewer {
             this.scene.add(directionalLight);
 
             // Initialize IFC API with proper WASM path
-            // Force single-threaded mode by passing true as second parameter
             this.ifcAPI.SetWasmPath('/');
             await this.ifcAPI.Init(undefined, true);
             this.isWasmInitialized = true;
@@ -158,6 +175,10 @@ export class IFCViewer {
             this.setupPicking();
             this.setupKeyboardShortcuts();
             this.setupClashEventListeners();
+            this.setupViewCube();
+
+            // Prevent browser zoom on canvas
+            this.setupZoomPrevention();
 
             // Setup window resize handler
             window.addEventListener("resize", () => this.onWindowResize());
@@ -203,11 +224,15 @@ export class IFCViewer {
         requestAnimationFrame(() => this.animate());
         this.controls.update();
         this.renderer.render(this.scene, this.camera);
+
+        // Update view cube orientation to match main camera
+        if (this.viewCube) {
+            this.viewCube.updateCubeOrientation();
+        }
     }
 
     public async loadIFC(file: File): Promise<void> {
         try {
-
             this.showLoading();
 
             // Ensure WASM is fully initialized before proceeding
@@ -220,11 +245,9 @@ export class IFCViewer {
 
             const data = await file.arrayBuffer();
 
-
             const modelID = this.ifcAPI.OpenModel(new Uint8Array(data), {
-                COORDINATE_TO_ORIGIN: true,
+                COORDINATE_TO_ORIGIN: false,
             });
-
 
             const model = new THREE.Group() as IFCModel;
             model.name = file.name;
@@ -291,38 +314,26 @@ export class IFCViewer {
                 elementCount++;
             });
 
-
             this.scene.add(model);
             const modelId = ++this.modelCounter;
             this.models.set(modelId, model);
 
+            // Find and align IFC origin
+            const ifcOrigin = await this.findIFCOrigin(modelID, model);
+            this.alignModelToWorldOrigin(model, ifcOrigin);
+
             this.createModelListItem(modelId, file.name, model);
 
-            const box = new THREE.Box3().setFromObject(model);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
+            // Position camera based on all models
+            this.updateCameraForAllModels();
 
-
-
-            const maxDim = Math.max(size.x, size.y, size.z);
-            const fov = this.camera.fov * (Math.PI / 180);
-            let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
-
-            this.camera.position.set(
-                center.x + cameraZ * 0.5,
-                center.y + cameraZ * 0.5,
-                center.z + cameraZ
-            );
-            this.controls.target.copy(center);
-            this.camera.lookAt(center);
-            this.controls.update();
-
+            // Update ViewCube model center for proper rotation axis
+            if (this.viewCube) {
+                this.viewCube.updateModelCenterFromViewer();
+            }
 
         } catch (error) {
             console.error("Error loading IFC file:", error);
-            if (error instanceof Error) {
-                console.error("Error details:", error.stack);
-            }
         } finally {
             this.hideLoading();
         }
@@ -413,6 +424,71 @@ export class IFCViewer {
                 event.preventDefault();
                 this.toggleSelectedVisibility();
             }
+        });
+    }
+
+    private setupKeyboardNavigation(): void {
+        document.addEventListener("keydown", (event: KeyboardEvent) => {
+            // Only handle keyboard navigation when not typing in input fields
+            if ((event.target as HTMLElement).closest("input, textarea")) {
+                return;
+            }
+
+            const panSpeed = 5;
+            const rotateSpeed = 0.05;
+
+            switch (event.code) {
+                case "ArrowLeft":
+                    event.preventDefault();
+                    this.controls.target.x -= panSpeed;
+                    this.camera.position.x -= panSpeed;
+                    break;
+                case "ArrowRight":
+                    event.preventDefault();
+                    this.controls.target.x += panSpeed;
+                    this.camera.position.x += panSpeed;
+                    break;
+                case "ArrowUp":
+                    event.preventDefault();
+                    if (event.shiftKey) {
+                        // Shift + Up: pan up
+                        this.controls.target.y += panSpeed;
+                        this.camera.position.y += panSpeed;
+                    } else {
+                        // Up: rotate up
+                        const quaternion = new THREE.Quaternion();
+                        quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -rotateSpeed);
+                        this.camera.position.applyQuaternion(quaternion);
+                    }
+                    break;
+                case "ArrowDown":
+                    event.preventDefault();
+                    if (event.shiftKey) {
+                        // Shift + Down: pan down
+                        this.controls.target.y -= panSpeed;
+                        this.camera.position.y -= panSpeed;
+                    } else {
+                        // Down: rotate down
+                        const quaternion = new THREE.Quaternion();
+                        quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), rotateSpeed);
+                        this.camera.position.applyQuaternion(quaternion);
+                    }
+                    break;
+                case "KeyQ":
+                    event.preventDefault();
+                    this.zoomIn();
+                    break;
+                case "KeyE":
+                    event.preventDefault();
+                    this.zoomOut();
+                    break;
+                case "KeyF":
+                    event.preventDefault();
+                    this.zoomToFit();
+                    break;
+            }
+
+            this.controls.update();
         });
     }
 
@@ -606,6 +682,42 @@ export class IFCViewer {
             } else {
                 this.clearClashIsolation();
             }
+        });
+    }
+
+    private setupZoomPrevention(): void {
+        // Prevent browser zoom when scrolling on the canvas
+        const canvas = this.renderer.domElement;
+        canvas.addEventListener('wheel', (event: WheelEvent) => {
+            event.preventDefault();
+        }, { passive: false });
+
+        // Also prevent zoom on container
+        this.container.addEventListener('wheel', (event: WheelEvent) => {
+            event.preventDefault();
+        }, { passive: false });
+    }
+
+    private setupViewCube(): void {
+        console.log('[IFCViewer] Setting up ViewCube');
+        console.log('[IFCViewer] Renderer DOM element parent:', this.renderer.domElement.parentElement);
+        console.log('[IFCViewer] Container:', this.container);
+
+        // Create view cube directly on the renderer's DOM element (3D canvas)
+        this.viewCube = new ViewCube(this.renderer.domElement.parentElement || this.container, this.camera, this.controls, this, {
+            size: 100,
+            position: { x: 20, y: 20 },
+            backgroundColor: 0x1a1a1a,
+            faceColors: {
+                front: 0x4a90e2,   // Blue
+                back: 0xe24a4a,    // Red
+                left: 0x4ae24a,    // Green
+                right: 0xe2e24a,   // Yellow
+                top: 0xe24ae2,     // Magenta
+                bottom: 0x4ae2e2   // Cyan
+            },
+            animationDuration: 600,
+            showZoomControls: true
         });
     }
 
@@ -1148,6 +1260,66 @@ export class IFCViewer {
         return this.renderer;
     }
 
+    // Enhanced zoom control methods
+    public zoomToFit(): void {
+        if (this.models.size === 0) return;
+
+        const box = new THREE.Box3();
+        let hasModels = false;
+
+        for (const [, model] of this.models) {
+            const modelBox = new THREE.Box3().setFromObject(model);
+            if (!hasModels) {
+                box.copy(modelBox);
+                hasModels = true;
+            } else {
+                box.union(modelBox);
+            }
+        }
+
+        if (!hasModels) return;
+
+        this.zoomToBox(box);
+    }
+
+    public zoomIn(factor: number = 0.9): void {
+        const currentDistance = this.camera.position.distanceTo(this.controls.target);
+        const newDistance = currentDistance * factor;
+        const clampedDistance = Math.max(this.controls.minDistance, newDistance);
+
+        const direction = new THREE.Vector3()
+            .subVectors(this.camera.position, this.controls.target)
+            .normalize()
+            .multiplyScalar(clampedDistance);
+
+        const newPosition = new THREE.Vector3()
+            .addVectors(this.controls.target, direction);
+
+        // Direct camera positioning for zoom in
+        this.camera.position.copy(newPosition);
+        this.camera.lookAt(this.controls.target);
+        this.controls.update();
+    }
+
+    public zoomOut(factor: number = 1.1): void {
+        const currentDistance = this.camera.position.distanceTo(this.controls.target);
+        const newDistance = currentDistance * factor;
+        const clampedDistance = Math.min(this.controls.maxDistance, newDistance);
+
+        const direction = new THREE.Vector3()
+            .subVectors(this.camera.position, this.controls.target)
+            .normalize()
+            .multiplyScalar(clampedDistance);
+
+        const newPosition = new THREE.Vector3()
+            .addVectors(this.controls.target, direction);
+
+        // Direct camera positioning for zoom in
+        this.camera.position.copy(newPosition);
+        this.camera.lookAt(this.controls.target);
+        this.controls.update();
+    }
+
     public getModelMap(): Map<number, IFCModel> {
         return this.models;
     }
@@ -1298,7 +1470,11 @@ export class IFCViewer {
 
         // Restore camera to initial position if we have it stored
         if (this.initialCameraPosition && this.initialCameraTarget) {
-            this.animateCameraToPosition(this.initialCameraPosition, this.initialCameraTarget);
+            // Direct camera positioning for clash isolation restore
+            this.camera.position.copy(this.initialCameraPosition);
+            this.controls.target.copy(this.initialCameraTarget);
+            this.camera.lookAt(this.controls.target);
+            this.controls.update();
 
             // Clear the stored positions after restoring
             this.initialCameraPosition = null;
@@ -1306,48 +1482,52 @@ export class IFCViewer {
         }
     }
 
-    private animateCameraToPosition(targetPosition: THREE.Vector3, targetLookAt: THREE.Vector3): void {
-        // Cancel any ongoing animation
-        if (this.currentZoomAnimation !== null) {
-            cancelAnimationFrame(this.currentZoomAnimation);
-            this.currentZoomAnimation = null;
+
+
+    private async findIFCOrigin(_modelID: number, model: IFCModel): Promise<THREE.Vector3> {
+        const ifcOrigin = new THREE.Vector3(0, 0, 0);
+        ifcOrigin.applyMatrix4(model.matrixWorld);
+        return ifcOrigin;
+    }
+
+    private alignModelToWorldOrigin(model: IFCModel, ifcOrigin: THREE.Vector3): void {
+        const offset = new THREE.Vector3(-ifcOrigin.x, -ifcOrigin.y, -ifcOrigin.z);
+        model.position.copy(offset);
+    }
+
+    private updateCameraForAllModels(): void {
+        if (this.models.size === 0) return;
+
+        let combinedBox = new THREE.Box3();
+        let hasModels = false;
+
+        for (const [_modelId, model] of this.models) {
+            const modelBox = new THREE.Box3().setFromObject(model);
+            if (!hasModels) {
+                combinedBox.copy(modelBox);
+                hasModels = true;
+            } else {
+                combinedBox.union(modelBox);
+            }
         }
 
-        const startPos = this.camera.position.clone();
-        const startTarget = this.controls.target.clone();
-        const startTime = performance.now();
-        const duration = 800;
+        if (!hasModels) return;
 
-        const animate = (currentTime: number): void => {
-            const elapsed = currentTime - startTime;
-            const progress = Math.min(elapsed / duration, 1);
+        const center = combinedBox.getCenter(new THREE.Vector3());
+        const size = combinedBox.getSize(new THREE.Vector3());
 
-            // Smooth ease-in-out cubic
-            const ease = progress < 0.5
-                ? 4 * progress * progress * progress
-                : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = this.camera.fov * (Math.PI / 180);
+        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
 
-            // Interpolate position and target
-            this.camera.position.lerpVectors(startPos, targetPosition, ease);
-            this.controls.target.lerpVectors(startTarget, targetLookAt, ease);
-
-            // Update camera and controls
-            this.camera.lookAt(this.controls.target);
-            this.controls.update();
-
-            if (progress < 1) {
-                this.currentZoomAnimation = requestAnimationFrame(animate);
-            } else {
-                // Final positioning
-                this.camera.position.copy(targetPosition);
-                this.controls.target.copy(targetLookAt);
-                this.camera.lookAt(targetLookAt);
-                this.controls.update();
-                this.currentZoomAnimation = null;
-            }
-        };
-
-        this.currentZoomAnimation = requestAnimationFrame(animate);
+        this.camera.position.set(
+            center.x + cameraZ * 0.5,
+            center.y + cameraZ * 0.5,
+            center.z + cameraZ
+        );
+        this.controls.target.copy(center);
+        this.camera.lookAt(center);
+        this.controls.update();
     }
 
 
