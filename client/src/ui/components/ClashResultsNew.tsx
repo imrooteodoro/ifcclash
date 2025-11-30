@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 
-const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || 'http://localhost:5001'
+const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ((import.meta as any).env.DEV ? 'http://localhost:5001' : '')
 
 type ClashData = {
     results: Array<{

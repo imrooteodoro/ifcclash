@@ -6,7 +6,7 @@ import ClashSidebar from './components/ClashSidebar'
 import FileUpload from './components/FileUpload'
 import { IFCViewer } from './IFCViewer'
 
-const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || 'http://localhost:5001'
+const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ((import.meta as any).env.DEV ? 'http://localhost:5001' : '')
 
 export default function App() {
     const [activeTab, setActiveTab] = useState('upload' as 'upload' | 'configure' | 'results' | 'viewer')
