@@ -332,7 +332,7 @@ export default function ClashResults({ data }: Props) {
                 document.body.removeChild(a)
                 window.URL.revokeObjectURL(url)
             } else {
-                const data = await response.json()
+                await response.json()
                 // Handle JSON export - could show in modal or download
             }
         } catch (error) {
@@ -811,7 +811,6 @@ export default function ClashResults({ data }: Props) {
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                             <div style={{
                                                 fontWeight: '600',
-                                                color: '#1e293b',
                                                 fontSize: '0.75rem',
                                                 background: getIFCClassColor(clash.a_ifc_class),
                                                 color: 'white',
@@ -839,7 +838,6 @@ export default function ClashResults({ data }: Props) {
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                             <div style={{
                                                 fontWeight: '600',
-                                                color: '#1e293b',
                                                 fontSize: '0.75rem',
                                                 background: getIFCClassColor(clash.b_ifc_class),
                                                 color: 'white',
