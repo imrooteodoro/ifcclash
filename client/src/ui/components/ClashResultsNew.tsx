@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 
-const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || 'http://localhost:5001'
+const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ((import.meta as any).env.DEV ? 'http://localhost:8080' : '')
 
 type ClashData = {
     results: Array<{
@@ -264,15 +264,23 @@ export default function ClashResults({ data }: Props) {
 
     const handleIsolateInViewer = useCallback(() => {
         const selectedGuids: string[] = []
+        const focusPoints: [number, number, number][] = []
+
         selectedClashes.forEach(clashId => {
             const clash = allClashes.find(c => c.id === clashId)
             if (clash) {
                 selectedGuids.push(clash.a_global_id, clash.b_global_id)
+                if (clash.p1) {
+                    focusPoints.push(clash.p1)
+                }
             }
         })
 
         document.dispatchEvent(new CustomEvent("clash-selection-change", {
-            detail: { guids: selectedGuids }
+            detail: {
+                guids: selectedGuids,
+                focusPoints: focusPoints
+            }
         }))
     }, [selectedClashes, allClashes])
 
@@ -332,7 +340,7 @@ export default function ClashResults({ data }: Props) {
                 document.body.removeChild(a)
                 window.URL.revokeObjectURL(url)
             } else {
-                const data = await response.json()
+                await response.json()
                 // Handle JSON export - could show in modal or download
             }
         } catch (error) {
@@ -811,7 +819,6 @@ export default function ClashResults({ data }: Props) {
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                             <div style={{
                                                 fontWeight: '600',
-                                                color: '#1e293b',
                                                 fontSize: '0.75rem',
                                                 background: getIFCClassColor(clash.a_ifc_class),
                                                 color: 'white',
@@ -839,7 +846,6 @@ export default function ClashResults({ data }: Props) {
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                                             <div style={{
                                                 fontWeight: '600',
-                                                color: '#1e293b',
                                                 fontSize: '0.75rem',
                                                 background: getIFCClassColor(clash.b_ifc_class),
                                                 color: 'white',

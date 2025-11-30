@@ -1,9 +1,12 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import CameraControls from "camera-controls";
 import { IfcAPI } from "web-ifc";
 import { Picker } from "./components/Picker";
 import { ViewCube } from "./ViewCube";
 import { GeometryData, IFCModel, PlacedGeometry } from "./types";
+
+// Install CameraControls
+CameraControls.install({ THREE: THREE });
 
 export class IFCViewer {
     private container: HTMLElement;
@@ -13,7 +16,8 @@ export class IFCViewer {
     private scene: THREE.Scene;
     private camera: THREE.PerspectiveCamera;
     private renderer: THREE.WebGLRenderer;
-    private controls: OrbitControls;
+    private controls: CameraControls;
+    private clock: THREE.Clock;
     private raycaster: THREE.Raycaster;
     private mouse: THREE.Vector2;
     private ifcAPI: IfcAPI;
@@ -58,7 +62,8 @@ export class IFCViewer {
             antialias: true,
             preserveDrawingBuffer: true,
         });
-        this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+        this.controls = new CameraControls(this.camera, this.renderer.domElement);
+        this.clock = new THREE.Clock();
         this.raycaster = new THREE.Raycaster();
         this.mouse = new THREE.Vector2();
 
@@ -132,20 +137,22 @@ export class IFCViewer {
             this.renderer.shadowMap.enabled = false;
             this.container.appendChild(this.renderer.domElement);
 
-            // Setup controls with enhanced zoom settings
-            this.controls.enableDamping = false; // Disable damping for immediate stop on mouse release
+            // Setup controls with CameraControls API
+            this.controls.enabled = true;
 
-            // Enhanced zoom controls
-            this.controls.enableZoom = true;
-            this.controls.zoomSpeed = 0.8;
-            this.controls.minDistance = 1;
-            this.controls.maxDistance = 1000;
+            // Enhanced zoom/dolly controls
+            this.controls.dollySpeed = 0.8;
+            this.controls.minDistance = 0.01;  // Very small minimum to allow close zoom
+            this.controls.maxDistance = Infinity;  // No maximum limit
 
-            // Pan and rotate settings
-            this.controls.enablePan = true;
-            this.controls.enableRotate = true;
-            this.controls.rotateSpeed = 0.5;
-            this.controls.panSpeed = 0.8;
+            // Pan (truck) and rotate settings
+            this.controls.truckSpeed = 0.8;
+            this.controls.azimuthRotateSpeed = 0.5;
+            this.controls.polarRotateSpeed = 0.5;
+
+            // Smooth transitions
+            this.controls.smoothTime = 0.25;
+            this.controls.draggingSmoothTime = 0.125;
 
             // Enhanced keyboard controls for additional navigation
             this.setupKeyboardNavigation();
@@ -179,6 +186,9 @@ export class IFCViewer {
 
             // Prevent browser zoom on canvas
             this.setupZoomPrevention();
+
+            // Setup cursor-based orbit center
+            this.setupCursorBasedOrbit();
 
             // Setup window resize handler
             window.addEventListener("resize", () => this.onWindowResize());
@@ -222,8 +232,13 @@ export class IFCViewer {
 
     private animate(): void {
         requestAnimationFrame(() => this.animate());
-        this.controls.update();
-        this.renderer.render(this.scene, this.camera);
+        const delta = this.clock.getDelta();
+        const hasControlsUpdated = this.controls.update(delta);
+
+        // Only render if controls updated or always render for smooth animation
+        if (hasControlsUpdated || true) {
+            this.renderer.render(this.scene, this.camera);
+        }
 
         // Update view cube orientation to match main camera
         if (this.viewCube) {
@@ -437,41 +452,36 @@ export class IFCViewer {
             const panSpeed = 5;
             const rotateSpeed = 0.05;
 
+            const target = this.getControlsTarget();
+            const delta = this.clock.getDelta();
+
             switch (event.code) {
                 case "ArrowLeft":
                     event.preventDefault();
-                    this.controls.target.x -= panSpeed;
-                    this.camera.position.x -= panSpeed;
+                    this.controls.truck(-panSpeed, 0, false);
                     break;
                 case "ArrowRight":
                     event.preventDefault();
-                    this.controls.target.x += panSpeed;
-                    this.camera.position.x += panSpeed;
+                    this.controls.truck(panSpeed, 0, false);
                     break;
                 case "ArrowUp":
                     event.preventDefault();
                     if (event.shiftKey) {
                         // Shift + Up: pan up
-                        this.controls.target.y += panSpeed;
-                        this.camera.position.y += panSpeed;
+                        this.controls.truck(0, panSpeed, false);
                     } else {
                         // Up: rotate up
-                        const quaternion = new THREE.Quaternion();
-                        quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), -rotateSpeed);
-                        this.camera.position.applyQuaternion(quaternion);
+                        this.controls.rotate(0, -rotateSpeed, false);
                     }
                     break;
                 case "ArrowDown":
                     event.preventDefault();
                     if (event.shiftKey) {
                         // Shift + Down: pan down
-                        this.controls.target.y -= panSpeed;
-                        this.camera.position.y -= panSpeed;
+                        this.controls.truck(0, -panSpeed, false);
                     } else {
                         // Down: rotate down
-                        const quaternion = new THREE.Quaternion();
-                        quaternion.setFromAxisAngle(new THREE.Vector3(1, 0, 0), rotateSpeed);
-                        this.camera.position.applyQuaternion(quaternion);
+                        this.controls.rotate(0, rotateSpeed, false);
                     }
                     break;
                 case "KeyQ":
@@ -488,7 +498,7 @@ export class IFCViewer {
                     break;
             }
 
-            this.controls.update();
+            this.controls.update(delta);
         });
     }
 
@@ -677,8 +687,10 @@ export class IFCViewer {
     private setupClashEventListeners(): void {
         document.addEventListener("clash-selection-change", (e: any) => {
             const guids: string[] = e?.detail?.guids ?? [];
+            const focusPoints: [number, number, number][] = e?.detail?.focusPoints ?? [];
+
             if (guids.length > 0) {
-                this.isolateByGuids(guids, { zoom: true });
+                this.isolateByGuids(guids, { zoom: true, focusPoints });
             } else {
                 this.clearClashIsolation();
             }
@@ -696,6 +708,104 @@ export class IFCViewer {
         this.container.addEventListener('wheel', (event: WheelEvent) => {
             event.preventDefault();
         }, { passive: false });
+    }
+
+    private setupCursorBasedOrbit(): void {
+        const canvas = this.renderer.domElement;
+
+        // Update orbit center immediately on pointerdown for left mouse button (orbit)
+        // Using setOrbitPoint ensures no camera movement, preventing jumps
+        canvas.addEventListener('pointerdown', (event: PointerEvent) => {
+            // Only handle left mouse button (button 0) for orbit
+            if (event.button === 0) {
+                // Update orbit center using pointerdown position
+                const rect = canvas.getBoundingClientRect();
+                const isOnCanvas = (
+                    event.clientX >= rect.left &&
+                    event.clientX <= rect.right &&
+                    event.clientY >= rect.top &&
+                    event.clientY <= rect.bottom
+                );
+
+                this.updateOrbitCenter(event, isOnCanvas);
+            }
+        }, true);
+    }
+
+    private updateOrbitCenter(event: MouseEvent | PointerEvent, isCursorOnCanvas: boolean): void {
+        // Determine the new orbit center point
+        let newTargetPoint: THREE.Vector3;
+        if (isCursorOnCanvas) {
+            // Use cursor position as orbit center
+            newTargetPoint = this.getWorldPointUnderCursor(event);
+        } else {
+            // Use center of canvas as orbit center
+            newTargetPoint = this.getWorldPointAtCanvasCenter();
+        }
+
+        // Use CameraControls' setOrbitPoint method - this changes the orbit center
+        // without moving the camera, preventing any visual jump
+        this.controls.setOrbitPoint(
+            newTargetPoint.x,
+            newTargetPoint.y,
+            newTargetPoint.z
+        );
+    }
+
+    private getWorldPointUnderCursor(event: MouseEvent | PointerEvent): THREE.Vector3 {
+        const rect = this.container.getBoundingClientRect();
+        const mouseX = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        const mouseY = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        // Update raycaster with mouse position
+        this.raycaster.setFromCamera(new THREE.Vector2(mouseX, mouseY), this.camera);
+
+        // Find intersections with all models
+        let intersects: THREE.Intersection[] = [];
+        this.models.forEach((model) => {
+            const modelIntersects = this.raycaster.intersectObject(model, true);
+            intersects = intersects.concat(modelIntersects);
+        });
+
+        if (intersects.length > 0) {
+            // Use the first intersection point
+            return intersects[0].point;
+        }
+
+        // If no intersection, calculate point at a reasonable distance along the ray
+        // Use the current camera distance as reference
+        const currentTarget = this.getControlsTarget();
+        const distance = this.camera.position.distanceTo(currentTarget);
+        const direction = this.raycaster.ray.direction.clone().normalize();
+        return this.camera.position.clone().add(
+            direction.multiplyScalar(distance)
+        );
+    }
+
+    private getWorldPointAtCanvasCenter(): THREE.Vector3 {
+        // Calculate center of canvas in normalized device coordinates (0, 0)
+        const centerNDC = new THREE.Vector2(0, 0);
+        this.raycaster.setFromCamera(centerNDC, this.camera);
+
+        // Find intersections with all models
+        let intersects: THREE.Intersection[] = [];
+        this.models.forEach((model) => {
+            const modelIntersects = this.raycaster.intersectObject(model, true);
+            intersects = intersects.concat(modelIntersects);
+        });
+
+        if (intersects.length > 0) {
+            // Use the first intersection point
+            return intersects[0].point;
+        }
+
+        // If no intersection, use current target or calculate point at reasonable distance
+        const currentTarget = this.getControlsTarget();
+        const distance = this.camera.position.distanceTo(currentTarget);
+        const direction = this.raycaster.ray.direction.clone().normalize();
+        return this.camera.position.clone().add(
+            direction.multiplyScalar(distance)
+        );
     }
 
     private setupViewCube(): void {
@@ -774,6 +884,17 @@ export class IFCViewer {
         return this.ifcAPI;
     }
 
+    // Helper methods for CameraControls target access
+    private getControlsTarget(): THREE.Vector3 {
+        const target = new THREE.Vector3();
+        this.controls.getTarget(target);
+        return target;
+    }
+
+    private setControlsTarget(x: number, y: number, z: number, enableTransition: boolean = false): void {
+        this.controls.setTarget(x, y, z, enableTransition);
+    }
+
 
 
     public setSectionBox(bbox: THREE.Box3 | null): void {
@@ -840,74 +961,53 @@ export class IFCViewer {
         this.zoomToBox(bbox);
     }
 
-    private zoomToBox(bbox: THREE.Box3): void {
+    private async zoomToBox(bbox: THREE.Box3): Promise<void> {
         // Cancel any ongoing zoom animation
         if (this.currentZoomAnimation !== null) {
             cancelAnimationFrame(this.currentZoomAnimation);
             this.currentZoomAnimation = null;
         }
 
-        const center = new THREE.Vector3();
-        const size = new THREE.Vector3();
-        bbox.getCenter(center);
-        bbox.getSize(size);
+        // Validate bounding box
+        if (bbox.isEmpty()) {
+            console.warn('[IFCViewer] Cannot zoom to empty bounding box');
+            return;
+        }
 
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const fov = this.camera.fov * (Math.PI / 180);
+        const size = bbox.getSize(new THREE.Vector3());
+        const center = bbox.getCenter(new THREE.Vector3());
+        const minSize = 0.001; // Minimum size threshold
 
-        // Calculate optimal distance for tight framing
-        const distance = (maxDim / 2) / Math.tan(fov / 2) * 1.1; // 10% padding
-        const clampedDistance = Math.max(2, Math.min(distance, 30));
+        console.log(`[IFCViewer] zoomToBox - Box size: [${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}], Center: [${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}]`);
 
-        // Simple camera positioning for bounding box
-        const newPosition = new THREE.Vector3();
+        if (size.x < minSize && size.y < minSize && size.z < minSize) {
+            console.warn('[IFCViewer] Bounding box too small to zoom');
+            return;
+        }
 
-        // Classic 3/4 view that's well centered
-        const angle = Math.PI / 4; // 45 degrees
-        newPosition.set(
-            center.x + Math.cos(angle) * clampedDistance * 0.7,  // Diagonal offset
-            center.y + clampedDistance * 0.8,                     // Above
-            center.z + Math.sin(angle) * clampedDistance * 0.7   // Diagonal offset
-        );
+        // CRITICAL: Set viewport to match renderer size for accurate fitToBox calculation
+        const containerWidth = this.container.clientWidth || 800;
+        const containerHeight = this.container.clientHeight || 600;
+        this.controls.setViewport(0, 0, containerWidth, containerHeight);
 
-        // Animate camera movement
-        const startPos = this.camera.position.clone();
-        const startTarget = this.controls.target.clone();
-        const startTime = performance.now();
-        const duration = 800; // Consistent with clash point zoom duration
+        // Use CameraControls fitToBox with cover: true to FILL THE ENTIRE SCREEN
+        // This is the key - cover: true fills the viewport, cover: false fits with margins
+        await this.controls.fitToBox(bbox, true, {
+            cover: true,         // TRUE = fill entire screen (may crop slightly)
+            paddingTop: 0,
+            paddingRight: 0,
+            paddingBottom: 0,
+            paddingLeft: 0
+        });
 
-        const animate = (currentTime: number): void => {
-            const elapsed = currentTime - startTime;
-            const progress = Math.min(elapsed / duration, 1);
+        // Ensure camera updates after transition
+        const delta = this.clock.getDelta();
+        this.controls.update(delta);
 
-            // Smooth ease-in-out using sine
-            const ease = 0.5 - 0.5 * Math.cos(progress * Math.PI);
-
-            // Update camera position and target with lerp
-            this.camera.position.lerpVectors(startPos, newPosition, ease);
-            this.controls.target.lerpVectors(startTarget, center, ease);
-
-            // Ensure camera looks at target
-            this.camera.lookAt(this.controls.target);
-            this.controls.update();
-
-            // Continue animation if not complete
-            if (progress < 1) {
-                this.currentZoomAnimation = requestAnimationFrame(animate);
-            } else {
-                // Final positioning - ensure exact centering
-                this.camera.position.copy(newPosition);
-                this.controls.target.copy(center);
-                this.camera.lookAt(center);
-                this.controls.update();
-                this.currentZoomAnimation = null;
-            }
-        };
-
-        this.currentZoomAnimation = requestAnimationFrame(animate);
+        console.log(`[IFCViewer] fitToBox complete with cover:true - distance: ${this.controls.distance.toFixed(2)}`);
     }
 
-    private zoomToClashPoints(clashPoints: [number, number, number][], targets: THREE.Object3D[]): void {
+    private async zoomToClashPoints(clashPoints: [number, number, number][], targets: THREE.Object3D[]): Promise<void> {
         // Cancel any ongoing animation
         if (this.currentZoomAnimation !== null) {
             cancelAnimationFrame(this.currentZoomAnimation);
@@ -916,7 +1016,7 @@ export class IFCViewer {
 
         // If only one clash point, use the single point zoom
         if (clashPoints.length === 1) {
-            this.zoomToClashPoint(clashPoints[0], targets);
+            await this.zoomToClashPoint(clashPoints[0], targets);
             return;
         }
 
@@ -927,201 +1027,140 @@ export class IFCViewer {
             clashBounds.expandByPoint(p);
         });
 
-        // Add some padding around the clash points
-        const padding = 1.0; // 1 unit padding
-        clashBounds.min.sub(new THREE.Vector3(padding, padding, padding));
-        clashBounds.max.add(new THREE.Vector3(padding, padding, padding));
-
-        // Also consider the objects' bounding box
-        let objectBounds = new THREE.Box3();
-        let hasObjectBounds = false;
+        // Also include all target objects in the bounding box
+        // CRITICAL: Update matrixWorld first
+        this.scene.updateMatrixWorld(true);
 
         for (const obj of targets) {
-            const objBox = new THREE.Box3().setFromObject(obj);
+            obj.updateMatrixWorld(true);
+            const wasVisible = obj.visible;
+            obj.visible = true;
+
+            const objBox = new THREE.Box3();
+            objBox.setFromObject(obj);
+
+            obj.visible = wasVisible;
+
             if (!objBox.isEmpty()) {
-                if (!hasObjectBounds) {
-                    objectBounds = objBox.clone();
-                    hasObjectBounds = true;
-                } else {
-                    objectBounds.union(objBox);
-                }
+                clashBounds.union(objBox);
             }
         }
 
-        // Use the union of clash points box and objects box
-        let finalBox = clashBounds.clone();
-        if (hasObjectBounds) {
-            // Only expand if the object bounds are reasonably close to clash points
-            const clashCenter = new THREE.Vector3();
-            const objectCenter = new THREE.Vector3();
-            clashBounds.getCenter(clashCenter);
-            objectBounds.getCenter(objectCenter);
-
-            const distance = clashCenter.distanceTo(objectCenter);
-            const clashSize = new THREE.Vector3();
-            clashBounds.getSize(clashSize);
-            const maxClashDim = Math.max(clashSize.x, clashSize.y, clashSize.z);
-
-            // If objects are within reasonable distance, include them
-            if (distance < maxClashDim * 3) {
-                finalBox.union(objectBounds);
-            }
+        // Validate bounding box
+        if (clashBounds.isEmpty()) {
+            console.warn('[IFCViewer] Cannot zoom to empty bounding box for clash points');
+            return;
         }
 
-        // Calculate center and size
-        const center = new THREE.Vector3();
-        const size = new THREE.Vector3();
-        finalBox.getCenter(center);
-        finalBox.getSize(size);
+        const size = clashBounds.getSize(new THREE.Vector3());
+        const center = clashBounds.getCenter(new THREE.Vector3());
 
-        const maxDim = Math.max(size.x, size.y, size.z);
-        const fov = this.camera.fov * (Math.PI / 180);
+        // CRITICAL: Set viewport to match renderer size for accurate fitToBox calculation
+        const containerWidth = this.container.clientWidth || 800;
+        const containerHeight = this.container.clientHeight || 600;
+        this.controls.setViewport(0, 0, containerWidth, containerHeight);
 
-        // Calculate distance to fit all clash points with proper field of view
-        const distance = (maxDim / 2) / Math.tan(fov / 2) * 1.4; // 40% extra for comfort
-        const clampedDistance = Math.max(5, Math.min(distance, 50)); // Reasonable bounds
+        // Use CameraControls fitToBox with cover: true to FILL THE ENTIRE SCREEN
+        await this.controls.fitToBox(clashBounds, true, {
+            cover: true,         // TRUE = fill entire screen
+            paddingTop: 0,
+            paddingRight: 0,
+            paddingBottom: 0,
+            paddingLeft: 0
+        });
 
-        // Simple camera positioning for multiple clash points
-        const newPosition = new THREE.Vector3();
+        // Ensure camera updates after transition
+        const delta = this.clock.getDelta();
+        this.controls.update(delta);
 
-        // Use a centered isometric view for multiple clashes
-        const angle = Math.PI / 4; // 45 degrees for balanced view
-        newPosition.set(
-            center.x + Math.cos(angle) * clampedDistance * 0.6,  // Diagonal offset
-            center.y + clampedDistance * 0.9,                     // Higher for overview
-            center.z + Math.sin(angle) * clampedDistance * 0.6   // Diagonal offset
-        );
-
-        // Animate to new position
-        const startPos = this.camera.position.clone();
-        const startTarget = this.controls.target.clone();
-        const startTime = performance.now();
-        const duration = 800;
-
-        const animate = (currentTime: number): void => {
-            const elapsed = currentTime - startTime;
-            const progress = Math.min(elapsed / duration, 1);
-
-            // Smooth ease-in-out using sine for natural motion
-            const ease = 0.5 - 0.5 * Math.cos(progress * Math.PI);
-
-            // Interpolate position and target using lerp
-            this.camera.position.lerpVectors(startPos, newPosition, ease);
-            this.controls.target.lerpVectors(startTarget, center, ease);
-
-            // Ensure camera looks at the interpolated target
-            this.camera.lookAt(this.controls.target);
-            this.controls.update();
-
-            if (progress < 1) {
-                this.currentZoomAnimation = requestAnimationFrame(animate);
-            } else {
-                // Final positioning - ensure exact centering on the calculated center
-                this.camera.position.copy(newPosition);
-                this.controls.target.copy(center);
-                this.camera.lookAt(center);
-                this.controls.update();
-
-                this.currentZoomAnimation = null;
-            }
-        };
-
-        this.currentZoomAnimation = requestAnimationFrame(animate);
+        console.log(`[IFCViewer] Centered on ${clashPoints.length} clashes at [${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}], distance: ${this.controls.distance.toFixed(2)}`);
     }
 
-    private zoomToClashPoint(clashPoint: [number, number, number], targets: THREE.Object3D[]): void {
+    private async zoomToClashPoint(clashPoint: [number, number, number], targets: THREE.Object3D[]): Promise<void> {
         // Cancel any ongoing animation
         if (this.currentZoomAnimation !== null) {
             cancelAnimationFrame(this.currentZoomAnimation);
             this.currentZoomAnimation = null;
         }
 
-        const focusPoint = new THREE.Vector3(clashPoint[0], clashPoint[1], clashPoint[2]);
+        // Calculate bounding box of ALL target objects
+        // CRITICAL: Update matrixWorld first to ensure accurate bounding box calculation
+        this.scene.updateMatrixWorld(true);
 
-        // Calculate optimal viewing distance based on the clash context
-        // Get bounding box of the target objects to understand the scale
-        let contextBox = new THREE.Box3();
-        let hasBox = false;
+        const boundingBox = new THREE.Box3();
+        let hasObjects = false;
 
         for (const obj of targets) {
-            const objBox = new THREE.Box3().setFromObject(obj);
+            // Update this object's matrixWorld
+            obj.updateMatrixWorld(true);
+
+            // Use setFromObject which includes all descendants
+            // Make sure object is visible for accurate calculation
+            const wasVisible = obj.visible;
+            obj.visible = true;
+
+            const objBox = new THREE.Box3();
+            objBox.setFromObject(obj);
+
+            // Restore visibility
+            obj.visible = wasVisible;
+
             if (!objBox.isEmpty()) {
-                if (!hasBox) {
-                    contextBox = objBox.clone();
-                    hasBox = true;
-                } else {
-                    contextBox.union(objBox);
-                }
+                boundingBox.union(objBox);
+                hasObjects = true;
             }
         }
 
-        // If we couldn't get a box from objects, create a minimal context around the clash point
-        if (!hasBox) {
-            const contextSize = 2;
-            contextBox = new THREE.Box3(
-                new THREE.Vector3(focusPoint.x - contextSize, focusPoint.y - contextSize, focusPoint.z - contextSize),
-                new THREE.Vector3(focusPoint.x + contextSize, focusPoint.y + contextSize, focusPoint.z + contextSize)
+        const size = boundingBox.getSize(new THREE.Vector3());
+        console.log(`[IFCViewer] Calculated bounding box for ${targets.length} targets - Size: [${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}]`);
+
+        // Ensure the clash point is included
+        const focusPoint = new THREE.Vector3(clashPoint[0], clashPoint[1], clashPoint[2]);
+        boundingBox.expandByPoint(focusPoint);
+
+        if (!hasObjects) {
+            // Fallback: create a small box around the clash point
+            const fallbackSize = 5;
+            boundingBox.set(
+                new THREE.Vector3(focusPoint.x - fallbackSize, focusPoint.y - fallbackSize, focusPoint.z - fallbackSize),
+                new THREE.Vector3(focusPoint.x + fallbackSize, focusPoint.y + fallbackSize, focusPoint.z + fallbackSize)
             );
         }
 
-        // Calculate optimal distance based on the context size
-        const size = new THREE.Vector3();
-        contextBox.getSize(size);
-        const maxDim = Math.max(size.x, size.y, size.z);
+        // Validate bounding box
+        if (boundingBox.isEmpty()) {
+            console.warn('[IFCViewer] Cannot zoom to empty bounding box for clash point');
+            return;
+        }
 
-        // Calculate distance to fit the context in view with some padding
-        const fov = this.camera.fov * (Math.PI / 180);
-        const optimalDistance = (maxDim / 2) / Math.tan(fov / 2) * 1.5; // 1.5x for padding
-        const clampedDistance = Math.max(3, Math.min(optimalDistance, 20)); // Clamp between 3 and 20 units
+        const boxSize = boundingBox.getSize(new THREE.Vector3());
+        const minSize = 0.001; // Minimum size threshold
 
-        // Simple, direct camera positioning for better centering
-        // Position camera at a consistent angle that keeps clash centered
-        const newPosition = new THREE.Vector3();
+        if (boxSize.x < minSize && boxSize.y < minSize && boxSize.z < minSize) {
+            // Expand the bounding box if it's too small
+            const expandSize = 2;
+            boundingBox.expandByScalar(expandSize);
+        }
 
-        // Use a classic isometric-like view that's centered
-        // This avoids any rightward bias
-        const angle = Math.PI / 4; // 45 degrees
-        newPosition.set(
-            focusPoint.x + Math.cos(angle) * clampedDistance * 0.7,  // Diagonal offset
-            focusPoint.y + clampedDistance * 0.8,                     // Above
-            focusPoint.z + Math.sin(angle) * clampedDistance * 0.7   // Diagonal offset
-        );
+        // CRITICAL: Set viewport to match renderer size for accurate fitToBox calculation
+        const containerWidth = this.container.clientWidth || 800;
+        const containerHeight = this.container.clientHeight || 600;
+        this.controls.setViewport(0, 0, containerWidth, containerHeight);
 
-        // Smooth animation using lerp as recommended
-        const startPos = this.camera.position.clone();
-        const startTarget = this.controls.target.clone();
-        const startTime = performance.now();
-        const duration = 600; // Slightly faster for more responsive feel
+        // Use CameraControls fitToBox with cover: true to FILL THE ENTIRE SCREEN
+        await this.controls.fitToBox(boundingBox, true, {
+            cover: true,         // TRUE = fill entire screen
+            paddingTop: 0,
+            paddingRight: 0,
+            paddingBottom: 0,
+            paddingLeft: 0
+        });
 
-        const animate = (currentTime: number): void => {
-            const elapsed = currentTime - startTime;
-            const progress = Math.min(elapsed / duration, 1);
+        // Ensure camera updates after transition
+        const delta = this.clock.getDelta();
+        this.controls.update(delta);
 
-            // Smooth ease-in-out using sine for more natural motion
-            const ease = 0.5 - 0.5 * Math.cos(progress * Math.PI);
-
-            // Use lerp for smooth interpolation
-            this.camera.position.lerpVectors(startPos, newPosition, ease);
-            this.controls.target.lerpVectors(startTarget, focusPoint, ease);
-
-            // Ensure camera always looks at the interpolated target
-            this.camera.lookAt(this.controls.target);
-            this.controls.update();
-
-            if (progress < 1) {
-                this.currentZoomAnimation = requestAnimationFrame(animate);
-            } else {
-                // Final positioning - ensure EXACT centering
-                this.camera.position.copy(newPosition);
-                this.controls.target.copy(focusPoint);
-                this.camera.lookAt(focusPoint);
-                this.controls.update();
-
-                this.currentZoomAnimation = null;
-            }
-        };
-
-        this.currentZoomAnimation = requestAnimationFrame(animate);
+        console.log(`[IFCViewer] Fitted to clash at [${focusPoint.x.toFixed(2)}, ${focusPoint.y.toFixed(2)}, ${focusPoint.z.toFixed(2)}], distance: ${this.controls.distance.toFixed(2)}`);
     }
 
 
@@ -1268,6 +1307,8 @@ export class IFCViewer {
         let hasModels = false;
 
         for (const [, model] of this.models) {
+            // Update matrix world to ensure accurate bounding box calculation
+            model.updateMatrixWorld(true);
             const modelBox = new THREE.Box3().setFromObject(model);
             if (!hasModels) {
                 box.copy(modelBox);
@@ -1279,45 +1320,57 @@ export class IFCViewer {
 
         if (!hasModels) return;
 
+        // Ensure bounding box is valid
+        if (box.isEmpty()) {
+            console.warn('[IFCViewer] Cannot zoom to fit - bounding box is empty');
+            return;
+        }
+
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        console.log(`[IFCViewer] Zoom to fit - Box size: [${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}], Center: [${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}]`);
+
         this.zoomToBox(box);
     }
 
     public zoomIn(factor: number = 0.9): void {
-        const currentDistance = this.camera.position.distanceTo(this.controls.target);
+        const target = this.getControlsTarget();
+        const currentDistance = this.camera.position.distanceTo(target);
         const newDistance = currentDistance * factor;
         const clampedDistance = Math.max(this.controls.minDistance, newDistance);
 
         const direction = new THREE.Vector3()
-            .subVectors(this.camera.position, this.controls.target)
+            .subVectors(this.camera.position, target)
             .normalize()
             .multiplyScalar(clampedDistance);
 
         const newPosition = new THREE.Vector3()
-            .addVectors(this.controls.target, direction);
+            .addVectors(target, direction);
 
-        // Direct camera positioning for zoom in
-        this.camera.position.copy(newPosition);
-        this.camera.lookAt(this.controls.target);
-        this.controls.update();
+        // Use CameraControls setPosition for smooth transition
+        this.controls.setPosition(newPosition.x, newPosition.y, newPosition.z, false);
+        const delta = this.clock.getDelta();
+        this.controls.update(delta);
     }
 
     public zoomOut(factor: number = 1.1): void {
-        const currentDistance = this.camera.position.distanceTo(this.controls.target);
+        const target = this.getControlsTarget();
+        const currentDistance = this.camera.position.distanceTo(target);
         const newDistance = currentDistance * factor;
         const clampedDistance = Math.min(this.controls.maxDistance, newDistance);
 
         const direction = new THREE.Vector3()
-            .subVectors(this.camera.position, this.controls.target)
+            .subVectors(this.camera.position, target)
             .normalize()
             .multiplyScalar(clampedDistance);
 
         const newPosition = new THREE.Vector3()
-            .addVectors(this.controls.target, direction);
+            .addVectors(target, direction);
 
-        // Direct camera positioning for zoom in
-        this.camera.position.copy(newPosition);
-        this.camera.lookAt(this.controls.target);
-        this.controls.update();
+        // Use CameraControls setPosition for smooth transition
+        this.controls.setPosition(newPosition.x, newPosition.y, newPosition.z, false);
+        const delta = this.clock.getDelta();
+        this.controls.update(delta);
     }
 
     public getModelMap(): Map<number, IFCModel> {
@@ -1392,7 +1445,7 @@ export class IFCViewer {
         // Store initial camera position before first clash selection
         if (this.lastIsolatedGuids.size === 0 && guids.length > 0) {
             this.initialCameraPosition = this.camera.position.clone();
-            this.initialCameraTarget = this.controls.target.clone();
+            this.initialCameraTarget = this.getControlsTarget().clone();
         }
 
         // Union of target objects from the index
@@ -1433,21 +1486,32 @@ export class IFCViewer {
         // 3) Zoom to clash points or union box
         if (opts.zoom) {
             // Small delay to ensure visibility changes are applied
-            setTimeout(() => {
+            setTimeout(async () => {
                 if (opts.focusPoints && opts.focusPoints.length > 0) {
                     // Focus on all clash points
-                    this.zoomToClashPoints(opts.focusPoints, targets);
+                    await this.zoomToClashPoints(opts.focusPoints, targets);
                 } else {
                     // Fallback to bounding box zoom
+                    // CRITICAL: Update matrixWorld first
+                    this.scene.updateMatrixWorld(true);
+
                     const union = new THREE.Box3();
                     let inited = false;
                     for (const o of targets) {
-                        const b = new THREE.Box3().setFromObject(o);
+                        o.updateMatrixWorld(true);
+                        const wasVisible = o.visible;
+                        o.visible = true;
+
+                        const b = new THREE.Box3();
+                        b.setFromObject(o);
+
+                        o.visible = wasVisible;
+
                         union.copy(inited ? union.union(b) : b);
                         inited = true;
                     }
                     if (inited) {
-                        this.zoomToBox(union);
+                        await this.zoomToBox(union);
                     }
                 }
             }, 50);
@@ -1470,11 +1534,16 @@ export class IFCViewer {
 
         // Restore camera to initial position if we have it stored
         if (this.initialCameraPosition && this.initialCameraTarget) {
-            // Direct camera positioning for clash isolation restore
-            this.camera.position.copy(this.initialCameraPosition);
-            this.controls.target.copy(this.initialCameraTarget);
-            this.camera.lookAt(this.controls.target);
-            this.controls.update();
+            // Use CameraControls setLookAt for smooth restore
+            this.controls.setLookAt(
+                this.initialCameraPosition.x,
+                this.initialCameraPosition.y,
+                this.initialCameraPosition.z,
+                this.initialCameraTarget.x,
+                this.initialCameraTarget.y,
+                this.initialCameraTarget.z,
+                true
+            );
 
             // Clear the stored positions after restoring
             this.initialCameraPosition = null;
@@ -1520,14 +1589,18 @@ export class IFCViewer {
         const fov = this.camera.fov * (Math.PI / 180);
         let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
 
-        this.camera.position.set(
+        const cameraPos = new THREE.Vector3(
             center.x + cameraZ * 0.5,
             center.y + cameraZ * 0.5,
             center.z + cameraZ
         );
-        this.controls.target.copy(center);
-        this.camera.lookAt(center);
-        this.controls.update();
+        this.controls.setLookAt(
+            cameraPos.x, cameraPos.y, cameraPos.z,
+            center.x, center.y, center.z,
+            false
+        );
+        const delta = this.clock.getDelta();
+        this.controls.update(delta);
     }
 
 

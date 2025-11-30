@@ -1,19 +1,17 @@
 import * as THREE from "three";
 
 export class Picker {
-    private viewer: any;
     public selectedObject: THREE.Object3D | null = null;
-    private isConnectionMode: boolean = false;
 
-    constructor(viewer: any) {
-        this.viewer = viewer;
+    constructor(_viewer: any) {
+        // Viewer not used yet
     }
 
-    public handleMouseMove(event: MouseEvent): void {
+    public handleMouseMove(_event: MouseEvent): void {
         // Implement mouse move logic for picking
     }
 
-    public handleClick(event: MouseEvent): void {
+    public handleClick(_event: MouseEvent): void {
         // Implement click logic for picking
     }
 
@@ -24,7 +22,7 @@ export class Picker {
         }
     }
 
-    public setConnectionMode(active: boolean): void {
-        this.isConnectionMode = active;
+    public setConnectionMode(_active: boolean): void {
+        // Connection mode logic not implemented
     }
 }

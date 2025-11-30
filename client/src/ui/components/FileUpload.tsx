@@ -4,7 +4,7 @@ type Props = { files: File[]; onFilesChange: (files: File[]) => void }
 
 export default function FileUpload({ files, onFilesChange }: Props) {
     const [isDragOver, setIsDragOver] = useState(false)
-    const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({})
+
 
     const handleDragOver = useCallback((e: React.DragEvent) => {
         e.preventDefault()
@@ -159,22 +159,7 @@ export default function FileUpload({ files, onFilesChange }: Props) {
                                 </div>
 
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    {uploadProgress[file.name] !== undefined && uploadProgress[file.name] < 100 && (
-                                        <div style={{
-                                            width: 60,
-                                            height: 4,
-                                            background: '#e2e8f0',
-                                            borderRadius: 2,
-                                            overflow: 'hidden'
-                                        }}>
-                                            <div style={{
-                                                width: `${uploadProgress[file.name]}%`,
-                                                height: '100%',
-                                                background: '#3b82f6',
-                                                transition: 'width 0.2s'
-                                            }} />
-                                        </div>
-                                    )}
+
 
                                     <button
                                         onClick={() => removeFile(index)}
