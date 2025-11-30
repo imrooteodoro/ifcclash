@@ -22,6 +22,7 @@ export default function App() {
     const [isRunning, setIsRunning] = useState(false)
     const [progress, setProgress] = useState(null as { stage: string; progress: number } | null)
     const [loadedToViewer, setLoadedToViewer] = useState(new Set<string>())
+    const appSectionRef = useRef<HTMLDivElement>(null)
 
 
 
@@ -119,6 +120,13 @@ export default function App() {
         }
     }, [files, sets, setsText])
 
+    const scrollToApp = useCallback(() => {
+        setActiveTab('upload')
+        if (appSectionRef.current) {
+            appSectionRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        }
+    }, [])
+
     const loadIFCToViewer = useCallback(async (file: File) => {
         // Initialize viewer if not already done
         if (!ifcViewerRef.current) {
@@ -207,14 +215,15 @@ export default function App() {
     return (
         <div style={{
             minHeight: '100vh',
-            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            fontFamily: 'system-ui, -apple-system, sans-serif'
+            background: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.08), transparent 40%), radial-gradient(circle at 80% 0%, rgba(255,255,255,0.06), transparent 30%), linear-gradient(135deg, #0f172a 0%, #312e81 45%, #6d28d9 100%)',
+            fontFamily: 'system-ui, -apple-system, sans-serif',
+            color: '#0b1021'
         }}>
             {/* Header */}
             <div style={{
-                background: 'rgba(255, 255, 255, 0.95)',
+                background: 'rgba(8, 15, 35, 0.6)',
                 backdropFilter: 'blur(10px)',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.2)',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.06)',
                 padding: '16px 0'
             }}>
                 <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
@@ -233,22 +242,165 @@ export default function App() {
                                 🔍
                             </div>
                             <div>
-                                <h1 style={{ margin: 0, color: '#1e293b', fontSize: '1.5rem', fontWeight: '700' }}>
+                                <h1 style={{ margin: 0, color: '#e2e8f0', fontSize: '1.5rem', fontWeight: '700' }}>
                                     IFC Clash Detection
                                 </h1>
-                                <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '0.875rem' }}>
-                                    Professional BIM clash analysis tool
+                                <p style={{ margin: '4px 0 0 0', color: '#cbd5e1', fontSize: '0.875rem' }}>
+                                    Free BIM clash analysis in your browser
                                 </p>
                             </div>
                         </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                            <button
+                                onClick={scrollToApp}
+                                style={{
+                                    padding: '10px 16px',
+                                    background: 'transparent',
+                                    color: '#cbd5e1',
+                                    border: '1px solid rgba(255,255,255,0.2)',
+                                    borderRadius: 8,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Launch app
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('viewer')}
+                                style={{
+                                    padding: '10px 16px',
+                                    background: 'linear-gradient(135deg, #38bdf8, #6366f1)',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: 8,
+                                    cursor: 'pointer',
+                                    boxShadow: '0 10px 30px rgba(99,102,241,0.35)'
+                                }}
+                            >
+                                View in 3D
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-
+            {/* Hero */}
+            <div style={{ maxWidth: 1200, margin: '0 auto', padding: '48px 24px 16px 24px', color: '#e2e8f0' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'center' }}>
+                    <div>
+                        <div style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '6px 12px',
+                            background: 'rgba(255,255,255,0.08)',
+                            borderRadius: 9999,
+                            fontSize: '0.85rem',
+                            marginBottom: 12,
+                            color: '#c4d4ff'
+                        }}>
+                            <span role="img" aria-label="sparkles">✨</span> Free IFC clash checker — nothing to install
+                        </div>
+                        <h2 style={{ margin: '0 0 12px 0', fontSize: '2.3rem', lineHeight: 1.2, color: 'white' }}>
+                            Detect BIM clashes, review in 3D, and share insights faster.
+                        </h2>
+                        <p style={{ margin: '0 0 16px 0', color: '#cbd5e1', fontSize: '1rem', lineHeight: 1.6 }}>
+                            Upload industry-standard IFC files, configure custom clash sets, and inspect issues directly in an
+                            interactive web viewer. Your files are processed securely and never stored permanently.
+                        </p>
+                        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+                            <button
+                                onClick={scrollToApp}
+                                style={{
+                                    padding: '12px 20px',
+                                    background: 'linear-gradient(135deg, #22d3ee, #818cf8)',
+                                    color: 'white',
+                                    border: 'none',
+                                    borderRadius: 12,
+                                    cursor: 'pointer',
+                                    boxShadow: '0 12px 35px rgba(56,189,248,0.3)',
+                                    fontWeight: 600,
+                                    fontSize: '1rem'
+                                }}
+                            >
+                                Start free clash check →
+                            </button>
+                            <button
+                                onClick={() => setActiveTab('configure')}
+                                style={{
+                                    padding: '12px 16px',
+                                    background: 'rgba(255,255,255,0.08)',
+                                    color: '#e2e8f0',
+                                    border: '1px solid rgba(255,255,255,0.15)',
+                                    borderRadius: 12,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Configure clash rules
+                            </button>
+                        </div>
+                        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: '0.95rem', color: '#cbd5e1' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span>🔒</span> Secure server-side processing
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span>📂</span> Supports .ifc files only
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span>👁️</span> Built-in 3D viewer
+                            </div>
+                        </div>
+                    </div>
+                    <div style={{
+                        background: 'rgba(255,255,255,0.08)',
+                        borderRadius: 16,
+                        padding: 20,
+                        border: '1px solid rgba(255,255,255,0.1)',
+                        boxShadow: '0 20px 60px rgba(0,0,0,0.35)'
+                    }}>
+                        <div style={{
+                            background: 'linear-gradient(135deg, rgba(56,189,248,0.2), rgba(99,102,241,0.25))',
+                            borderRadius: 12,
+                            padding: 16,
+                            marginBottom: 12,
+                            color: 'white'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                                <span style={{ fontSize: '1.2rem' }}>⚡</span>
+                                <div>
+                                    <div style={{ fontWeight: 700 }}>Fast, accurate clash detection</div>
+                                    <div style={{ fontSize: '0.95rem', color: '#dbeafe' }}>Process complex IFC models without installs.</div>
+                                </div>
+                            </div>
+                            <div style={{
+                                height: 10,
+                                width: '100%',
+                                background: 'rgba(255,255,255,0.12)',
+                                borderRadius: 9999,
+                                overflow: 'hidden'
+                            }}>
+                                <div style={{ width: '78%', height: '100%', background: 'linear-gradient(90deg, #22d3ee, #a855f7)' }} />
+                            </div>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                            {[{ title: 'Upload IFC', desc: 'Drag & drop your .ifc files securely.' }, { title: 'Configure rules', desc: 'Build clash sets tailored to your model.' }, { title: 'Run detection', desc: 'Server-side processing with clear status.' }, { title: 'Review in 3D', desc: 'Navigate clashes with isolation and zoom.' }].map(item => (
+                                <div key={item.title} style={{
+                                    background: 'rgba(255,255,255,0.06)',
+                                    borderRadius: 12,
+                                    padding: 12,
+                                    border: '1px solid rgba(255,255,255,0.08)',
+                                    color: '#e2e8f0'
+                                }}>
+                                    <div style={{ fontWeight: 700, marginBottom: 6 }}>{item.title}</div>
+                                    <div style={{ fontSize: '0.9rem', color: '#cbd5e1' }}>{item.desc}</div>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 </div>
             </div>
 
             {/* Main Content */}
-            <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
+            <div ref={appSectionRef} style={{ maxWidth: 1200, margin: '0 auto', padding: '24px' }}>
                 {/* Navigation Tabs */}
                 <div style={{
                     display: 'flex',
