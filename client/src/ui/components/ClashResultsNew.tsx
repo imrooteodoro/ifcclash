@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 
-const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ((import.meta as any).env.DEV ? 'http://localhost:5001' : '')
+const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ((import.meta as any).env.DEV ? 'http://localhost:8080' : '')
 
 type ClashData = {
     results: Array<{
@@ -264,15 +264,23 @@ export default function ClashResults({ data }: Props) {
 
     const handleIsolateInViewer = useCallback(() => {
         const selectedGuids: string[] = []
+        const focusPoints: [number, number, number][] = []
+
         selectedClashes.forEach(clashId => {
             const clash = allClashes.find(c => c.id === clashId)
             if (clash) {
                 selectedGuids.push(clash.a_global_id, clash.b_global_id)
+                if (clash.p1) {
+                    focusPoints.push(clash.p1)
+                }
             }
         })
 
         document.dispatchEvent(new CustomEvent("clash-selection-change", {
-            detail: { guids: selectedGuids }
+            detail: {
+                guids: selectedGuids,
+                focusPoints: focusPoints
+            }
         }))
     }, [selectedClashes, allClashes])
 

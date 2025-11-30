@@ -6,8 +6,13 @@ import json
 import tempfile
 import subprocess
 import sys
-import ifcopenshell
-import ifcopenshell.util.element
+try:
+    import ifcopenshell
+    import ifcopenshell.util.element
+    IFCOPENSHELL_AVAILABLE = True
+except Exception as e:
+    print(f"IfcOpenShell not available: {e}")
+    IFCOPENSHELL_AVAILABLE = False
 
 app = Flask(__name__, static_folder='../static', static_url_path='')
 CORS(app)
@@ -20,6 +25,9 @@ storey_cache = {}
 
 def get_building_storey_info(ifc_file_path):
     """Extract building storey information for elements in IFC file"""
+    if not IFCOPENSHELL_AVAILABLE:
+        logger.warning("IfcOpenShell not available; skipping storey extraction.")
+        return {}
     if ifc_file_path in storey_cache:
         return storey_cache[ifc_file_path]
 

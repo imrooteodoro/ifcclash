@@ -721,7 +721,7 @@ export class ViewCube {
 
         // Store start positions
         const startPosition = this.mainCamera.position.clone();
-        const startTarget = this.mainControls.target.clone();
+        const startTarget = this.getControlsTarget().clone();
         const startTime = performance.now();
 
         // Calculate up vector to avoid camera roll
@@ -743,14 +743,15 @@ export class ViewCube {
             this.mainCamera.position.lerpVectors(startPosition, newCameraPosition, ease);
 
             // Keep target at model center
-            this.mainControls.target.lerpVectors(startTarget, this.modelCenter, ease);
+            const currentTarget = startTarget.clone().lerp(this.modelCenter, ease);
+            this.setControlsTarget(currentTarget.x, currentTarget.y, currentTarget.z, false);
 
             // Set camera up vector to prevent roll
             this.mainCamera.up.lerp(upVector, ease * 0.1); // Gradual up vector change
 
             // Update camera and controls
-            this.mainCamera.lookAt(this.mainControls.target);
-            this.mainControls.update();
+            this.mainCamera.lookAt(currentTarget);
+            this.updateControls(0.016);
 
             // Update ViewCube orientation
             this.updateCubeOrientation();
@@ -763,10 +764,10 @@ export class ViewCube {
 
                 // Ensure final position is exact
                 this.mainCamera.position.copy(newCameraPosition);
-                this.mainControls.target.copy(this.modelCenter);
+                this.setControlsTarget(this.modelCenter.x, this.modelCenter.y, this.modelCenter.z, false);
                 this.mainCamera.up.copy(upVector);
                 this.mainCamera.lookAt(this.modelCenter);
-                this.mainControls.update();
+                this.updateControls(0.016);
 
                 // Update ViewCube one final time
                 this.updateCubeOrientation();
@@ -910,10 +911,11 @@ export class ViewCube {
         rotatedTargetOffset.applyQuaternion(combinedRotation);
 
         // Set new target position
-        this.mainControls.target.copy(this.modelCenter).add(rotatedTargetOffset);
+        const newTarget = this.modelCenter.clone().add(rotatedTargetOffset);
+        this.setControlsTarget(newTarget.x, newTarget.y, newTarget.z, false);
 
         // Update controls
-        this.mainControls.update();
+        this.updateControls(0.016);
 
         // Update view cube orientation
         this.updateCubeOrientation();
@@ -960,10 +962,11 @@ export class ViewCube {
         rotatedTargetOffset.applyQuaternion(rotationQuaternion);
 
         // Set new target position
-        this.mainControls.target.copy(this.modelCenter).add(rotatedTargetOffset);
+        const newTarget = this.modelCenter.clone().add(rotatedTargetOffset);
+        this.setControlsTarget(newTarget.x, newTarget.y, newTarget.z, false);
 
         // Update controls
-        this.mainControls.update();
+        this.updateControls(0.016);
 
         // Update view cube orientation
         this.updateCubeOrientation();
@@ -985,7 +988,7 @@ export class ViewCube {
         // Store initial camera state if not already dragging
         if (!this.isDragging) {
             this.initialCameraPosition.copy(this.mainCamera.position);
-            this.initialCameraTarget.copy(this.mainControls.target);
+            this.initialCameraTarget.copy(this.getControlsTarget());
             this.currentRotationAngle = 0;
             this.updateModelCenter();
         }
@@ -1006,17 +1009,19 @@ export class ViewCube {
         this.mainCamera.updateMatrixWorld();
 
         // Calculate target offset from model center
+        const currentTarget = this.getControlsTarget();
         const targetOffset = new THREE.Vector3()
-            .subVectors(this.mainControls.target, this.modelCenter);
+            .subVectors(currentTarget, this.modelCenter);
 
         // Apply same rotation to target offset
         targetOffset.applyQuaternion(rotationQuaternion);
 
         // Set new target position
-        this.mainControls.target.copy(this.modelCenter).add(targetOffset);
+        const newTarget = this.modelCenter.clone().add(targetOffset);
+        this.setControlsTarget(newTarget.x, newTarget.y, newTarget.z, false);
 
         // Update controls
-        this.mainControls.update();
+        this.updateControls(0.016);
 
         // Update view cube orientation
         this.updateCubeOrientation();
@@ -1042,11 +1047,11 @@ export class ViewCube {
                 // First significant movement - start the drag operation
                 this.hasMouseMoved = true;
                 this.isDragging = true;
-                console.log('[ViewCube] DRAG START - Camera pos:', this.mainCamera.position, 'Target:', this.mainControls.target);
+                console.log('[ViewCube] DRAG START - Camera pos:', this.mainCamera.position, 'Target:', this.getControlsTarget());
 
                 // Store current camera state for smooth rotation
                 this.initialCameraPosition.copy(this.mainCamera.position);
-                this.initialCameraTarget.copy(this.mainControls.target);
+                this.initialCameraTarget.copy(this.getControlsTarget());
 
                 // Reset drag deltas for this new drag session
                 this.dragDeltaX = 0;
@@ -1157,7 +1162,7 @@ export class ViewCube {
 
     private onMouseUp(_event: MouseEvent): void {
         if (this.isDragging) {
-            console.log('[ViewCube] DRAG END - Camera pos:', this.mainCamera.position, 'Target:', this.mainControls.target);
+            console.log('[ViewCube] DRAG END - Camera pos:', this.mainCamera.position, 'Target:', this.getControlsTarget());
 
             // Clean up document-level drag handlers
             this.cleanupDocumentDragHandlers();
@@ -1185,7 +1190,7 @@ export class ViewCube {
 
             // Ensure camera and controls are properly synchronized after drag
             this.mainCamera.updateMatrixWorld();
-            this.mainControls.update();
+            this.updateControls(0.016);
         }
     }
 
@@ -1268,7 +1273,7 @@ export class ViewCube {
     // Debug method to check ViewCube status
     public debugStatus(): void {
         console.log('[ViewCube] STATUS - Dragging:', this.isDragging);
-        console.log('[ViewCube] Camera pos:', this.mainCamera.position, 'Target:', this.mainControls.target);
+        console.log('[ViewCube] Camera pos:', this.mainCamera.position, 'Target:', this.getControlsTarget());
     }
 
     public setSize(width: number, height: number): void {
@@ -1283,5 +1288,26 @@ export class ViewCube {
     // Public method to update model center when models change
     public updateModelCenterFromViewer(): void {
         this.updateModelCenter();
+    }
+
+    // Helper methods for CameraControls target access
+    private getControlsTarget(): THREE.Vector3 {
+        const target = new THREE.Vector3();
+        if (this.mainControls && typeof this.mainControls.getTarget === 'function') {
+            this.mainControls.getTarget(target);
+        }
+        return target;
+    }
+
+    private setControlsTarget(x: number, y: number, z: number, enableTransition: boolean = false): void {
+        if (this.mainControls && typeof this.mainControls.setTarget === 'function') {
+            this.mainControls.setTarget(x, y, z, enableTransition);
+        }
+    }
+
+    private updateControls(delta: number = 0.016): void {
+        if (this.mainControls && typeof this.mainControls.update === 'function') {
+            this.mainControls.update(delta);
+        }
     }
 }
