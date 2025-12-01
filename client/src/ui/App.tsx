@@ -365,7 +365,7 @@ export default function App() {
                             marginBottom: 12,
                             color: '#c4d4ff'
                         }}>
-                            <Sparkles size={14} /> Free IFC clash checker — nothing to install
+                            <Sparkles size={14} /> Free IFC clash checker, nothing to install
                         </div>
                         <h2 style={{ margin: '0 0 12px 0', fontSize: '2.3rem', lineHeight: 1.2, color: 'white' }}>
                             Detect BIM clashes, review in 3D, and share insights faster.
