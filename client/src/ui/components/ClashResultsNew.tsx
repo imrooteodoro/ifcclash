@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback } from 'react'
+import { Flame, BarChart3, Filter, Search, Building2, Building, Zap, AlertTriangle, Ruler, ArrowUpDown, Trash2, Eye, X, Download, ArrowLeft, ArrowRight, Camera } from 'lucide-react'
+import type { IFCViewer } from '../IFCViewer'
 
-const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ((import.meta as any).env.DEV ? 'http://localhost:8080' : '')
+const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ((import.meta as any).env.DEV ? '' : '') // Empty string uses Vite proxy in dev, or relative paths in production
 
 type ClashData = {
     results: Array<{
@@ -23,7 +25,11 @@ type ClashData = {
     }>
 }
 
-type Props = { data: ClashData | null }
+type Props = {
+    data: ClashData | null
+    onSwitchToViewer?: () => void
+    viewer?: IFCViewer | null
+}
 
 type FilterState = {
     ifcClasses: Set<string>
@@ -54,12 +60,14 @@ type ClashItem = {
     severity?: 'critical' | 'high' | 'medium' | 'low'
 }
 
-export default function ClashResults({ data }: Props) {
+export default function ClashResults({ data, onSwitchToViewer, viewer }: Props) {
     const [selectedClashes, setSelectedClashes] = useState<Set<string>>(new Set())
     const [currentPage, setCurrentPage] = useState(1)
     const [itemsPerPage] = useState(20)
     const [showFilters, setShowFilters] = useState(true)
     const [showStats, setShowStats] = useState(true)
+    const [isCapturingScreenshots, setIsCapturingScreenshots] = useState(false)
+    const [captureProgress, setCaptureProgress] = useState({ current: 0, total: 0 })
 
     const [filters, setFilters] = useState<FilterState>({
         ifcClasses: new Set(),
@@ -276,13 +284,21 @@ export default function ClashResults({ data }: Props) {
             }
         })
 
-        document.dispatchEvent(new CustomEvent("clash-selection-change", {
-            detail: {
-                guids: selectedGuids,
-                focusPoints: focusPoints
-            }
-        }))
-    }, [selectedClashes, allClashes])
+        // Switch to viewer tab first
+        if (onSwitchToViewer) {
+            onSwitchToViewer()
+        }
+
+        // Dispatch event after a short delay to ensure viewer tab is active
+        setTimeout(() => {
+            document.dispatchEvent(new CustomEvent("clash-selection-change", {
+                detail: {
+                    guids: selectedGuids,
+                    focusPoints: focusPoints
+                }
+            }))
+        }, 100)
+    }, [selectedClashes, allClashes, onSwitchToViewer])
 
     const handleClearSelection = useCallback(() => {
         setSelectedClashes(new Set())
@@ -349,6 +365,77 @@ export default function ClashResults({ data }: Props) {
         }
     }, [filteredClashes, filters])
 
+    // BCF Export function - uses selected clashes if any are selected, otherwise uses filtered clashes
+    const exportBCF = useCallback(async (includeScreenshots: boolean = false) => {
+        try {
+            // Determine which clashes to export: selected ones if any, otherwise filtered ones
+            const clashesToExport = selectedClashes.size > 0
+                ? allClashes.filter(clash => selectedClashes.has(clash.id))
+                : filteredClashes
+
+            if (clashesToExport.length === 0) {
+                alert('No clashes selected for export. Please select clashes or adjust filters.')
+                return
+            }
+
+            let screenshots: Record<string, string> = {}
+
+            // Capture screenshots if viewer is available and user wants them
+            if (includeScreenshots && viewer) {
+                setIsCapturingScreenshots(true)
+                setCaptureProgress({ current: 0, total: clashesToExport.length })
+
+                try {
+                    const screenshotResults = await viewer.captureClashScreenshots(
+                        clashesToExport,
+                        (current, total) => setCaptureProgress({ current, total })
+                    )
+
+                    // Convert to map for easy lookup
+                    screenshotResults.forEach(({ clashId, screenshot }) => {
+                        // Remove data URL prefix to send just base64
+                        screenshots[clashId] = screenshot.replace(/^data:image\/png;base64,/, '')
+                    })
+                } finally {
+                    setIsCapturingScreenshots(false)
+                    setCaptureProgress({ current: 0, total: 0 })
+                }
+            }
+
+            const response = await fetch(`${apiBase}/api/export-bcf`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    clashes: clashesToExport,
+                    projectName: 'Clash Detection Results',
+                    screenshots: Object.keys(screenshots).length > 0 ? screenshots : undefined
+                })
+            })
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ error: 'Export failed' }))
+                throw new Error(errorData.error || 'Export failed')
+            }
+
+            const blob = await response.blob()
+            const url = window.URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            const exportType = selectedClashes.size > 0 ? 'selected' : 'filtered'
+            const withScreenshots = includeScreenshots && Object.keys(screenshots).length > 0 ? '_with_snapshots' : ''
+            a.download = `clash_results_${exportType}${withScreenshots}_${new Date().toISOString().split('T')[0]}.bcfzip`
+            document.body.appendChild(a)
+            a.click()
+            document.body.removeChild(a)
+            window.URL.revokeObjectURL(url)
+        } catch (error) {
+            console.error('BCF export failed:', error)
+            alert(`BCF export failed: ${error instanceof Error ? error.message : 'Please try again.'}`)
+        }
+    }, [selectedClashes, filteredClashes, allClashes, viewer])
+
     if (!data?.results || allClashes.length === 0) {
         return (
             <div style={{ padding: 16, background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, textAlign: 'center' }}>
@@ -364,7 +451,8 @@ export default function ClashResults({ data }: Props) {
             <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <h3 style={{ margin: 0, color: '#1e293b', fontSize: '1.25rem' }}>🔥 Advanced Clash Analysis</h3>
+                        <Flame size={20} style={{ color: '#ef4444' }} />
+                        <h3 style={{ margin: 0, color: '#1e293b', fontSize: '1.25rem' }}>Advanced Clash Analysis</h3>
                         <span style={{
                             background: '#ef4444',
                             color: 'white',
@@ -400,10 +488,13 @@ export default function ClashResults({ data }: Props) {
                                 borderRadius: 6,
                                 cursor: 'pointer',
                                 fontSize: '0.75rem',
-                                fontWeight: '500'
+                                fontWeight: '500',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
                             }}
                         >
-                            📊 Stats
+                            <BarChart3 size={14} /> Stats
                         </button>
                         <button
                             onClick={() => setShowFilters(!showFilters)}
@@ -415,10 +506,13 @@ export default function ClashResults({ data }: Props) {
                                 borderRadius: 6,
                                 cursor: 'pointer',
                                 fontSize: '0.75rem',
-                                fontWeight: '500'
+                                fontWeight: '500',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
                             }}
                         >
-                            🔍 Filters
+                            <Filter size={14} /> Filters
                         </button>
                         <button
                             onClick={() => exportResults('csv')}
@@ -431,11 +525,70 @@ export default function ClashResults({ data }: Props) {
                                 borderRadius: 6,
                                 cursor: filteredClashes.length > 0 ? 'pointer' : 'not-allowed',
                                 fontSize: '0.75rem',
-                                fontWeight: '500'
+                                fontWeight: '500',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
                             }}
                         >
-                            📊 Export CSV
+                            <Download size={14} /> Export CSV
                         </button>
+                        <button
+                            onClick={() => exportBCF(false)}
+                            disabled={(selectedClashes.size === 0 && filteredClashes.length === 0) || isCapturingScreenshots}
+                            title={selectedClashes.size > 0
+                                ? `Export ${selectedClashes.size} selected clash${selectedClashes.size === 1 ? '' : 'es'} to BCF`
+                                : 'Export filtered clashes to BCF'}
+                            style={{
+                                padding: '6px 12px',
+                                background: (selectedClashes.size > 0 || filteredClashes.length > 0) && !isCapturingScreenshots ? '#7c3aed' : '#f3f4f6',
+                                color: (selectedClashes.size > 0 || filteredClashes.length > 0) && !isCapturingScreenshots ? 'white' : '#9ca3af',
+                                border: '1px solid #d1d5db',
+                                borderRadius: 6,
+                                cursor: (selectedClashes.size > 0 || filteredClashes.length > 0) && !isCapturingScreenshots ? 'pointer' : 'not-allowed',
+                                fontSize: '0.75rem',
+                                fontWeight: '500',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
+                            }}
+                        >
+                            <Download size={14} />
+                            {selectedClashes.size > 0
+                                ? `Export BCF (${selectedClashes.size})`
+                                : 'Export BCF'}
+                        </button>
+                        {viewer && (
+                            <button
+                                onClick={() => exportBCF(true)}
+                                disabled={(selectedClashes.size === 0 && filteredClashes.length === 0) || isCapturingScreenshots}
+                                title={isCapturingScreenshots
+                                    ? `Capturing screenshots (${captureProgress.current}/${captureProgress.total})...`
+                                    : selectedClashes.size > 0
+                                        ? `Export ${selectedClashes.size} clash${selectedClashes.size === 1 ? '' : 'es'} to BCF with 3D screenshots`
+                                        : 'Export filtered clashes to BCF with 3D screenshots'}
+                                style={{
+                                    padding: '6px 12px',
+                                    background: isCapturingScreenshots
+                                        ? '#fbbf24'
+                                        : (selectedClashes.size > 0 || filteredClashes.length > 0) ? '#059669' : '#f3f4f6',
+                                    color: (selectedClashes.size > 0 || filteredClashes.length > 0) || isCapturingScreenshots ? 'white' : '#9ca3af',
+                                    border: '1px solid #d1d5db',
+                                    borderRadius: 6,
+                                    cursor: (selectedClashes.size > 0 || filteredClashes.length > 0) && !isCapturingScreenshots ? 'pointer' : 'not-allowed',
+                                    fontSize: '0.75rem',
+                                    fontWeight: '500',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6
+                                }}
+                            >
+                                <Camera size={14} />
+                                {isCapturingScreenshots
+                                    ? `Capturing... (${captureProgress.current}/${captureProgress.total})`
+                                    : 'BCF + Snapshots'}
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -502,10 +655,13 @@ export default function ClashResults({ data }: Props) {
                                 borderRadius: 4,
                                 cursor: 'pointer',
                                 fontSize: '0.75rem',
-                                fontWeight: '500'
+                                fontWeight: '500',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
                             }}
                         >
-                            👁️ Isolate in 3D
+                            <Eye size={14} /> Isolate in 3D
                         </button>
                         <button
                             onClick={handleClearSelection}
@@ -517,10 +673,13 @@ export default function ClashResults({ data }: Props) {
                                 borderRadius: 4,
                                 cursor: 'pointer',
                                 fontSize: '0.75rem',
-                                fontWeight: '500'
+                                fontWeight: '500',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
                             }}
                         >
-                            ✕ Clear
+                            <X size={14} /> Clear
                         </button>
                     </div>
                 )}
@@ -536,8 +695,8 @@ export default function ClashResults({ data }: Props) {
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
                         {/* Search */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151' }}>
-                                🔍 Search
+                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Search size={12} /> Search
                             </label>
                             <input
                                 type="text"
@@ -556,8 +715,8 @@ export default function ClashResults({ data }: Props) {
 
                         {/* IFC Class Filter */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151' }}>
-                                🏗️ IFC Classes
+                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Building2 size={12} /> IFC Classes
                             </label>
                             <select
                                 multiple
@@ -583,8 +742,8 @@ export default function ClashResults({ data }: Props) {
 
                         {/* Building Storey Filter */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151' }}>
-                                🏢 Storeys
+                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Building size={12} /> Storeys
                             </label>
                             <select
                                 multiple
@@ -610,8 +769,8 @@ export default function ClashResults({ data }: Props) {
 
                         {/* Clash Type Filter */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151' }}>
-                                ⚡ Types
+                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Zap size={12} /> Types
                             </label>
                             <select
                                 multiple
@@ -637,8 +796,8 @@ export default function ClashResults({ data }: Props) {
 
                         {/* Severity Filter */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151' }}>
-                                🚨 Severity
+                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <AlertTriangle size={12} /> Severity
                             </label>
                             <select
                                 multiple
@@ -664,8 +823,8 @@ export default function ClashResults({ data }: Props) {
 
                         {/* Distance Range */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151' }}>
-                                📏 Distance: {filters.distanceRange[0]} - {filters.distanceRange[1]}
+                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <Ruler size={12} /> Distance: {filters.distanceRange[0]} - {filters.distanceRange[1]}
                             </label>
                             <input
                                 type="range"
@@ -680,8 +839,8 @@ export default function ClashResults({ data }: Props) {
 
                         {/* Sort Options */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151' }}>
-                                🔄 Sort By
+                            <label style={{ fontSize: '0.75rem', fontWeight: '500', color: '#374151', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <ArrowUpDown size={12} /> Sort By
                             </label>
                             <div style={{ display: 'flex', gap: 4 }}>
                                 <select
@@ -707,10 +866,13 @@ export default function ClashResults({ data }: Props) {
                                         border: '1px solid #d1d5db',
                                         borderRadius: 4,
                                         cursor: 'pointer',
-                                        fontSize: '0.75rem'
+                                        fontSize: '0.75rem',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center'
                                     }}
                                 >
-                                    {filters.sortOrder === 'asc' ? '↑' : '↓'}
+                                    {filters.sortOrder === 'asc' ? <ArrowUpDown size={12} /> : <ArrowUpDown size={12} style={{ transform: 'rotate(180deg)' }} />}
                                 </button>
                             </div>
                         </div>
@@ -727,10 +889,13 @@ export default function ClashResults({ data }: Props) {
                                     borderRadius: 4,
                                     cursor: 'pointer',
                                     fontSize: '0.75rem',
-                                    fontWeight: '500'
+                                    fontWeight: '500',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 6
                                 }}
                             >
-                                🗑️ Clear All
+                                <Trash2 size={14} /> Clear All
                             </button>
                         </div>
                     </div>
@@ -805,14 +970,15 @@ export default function ClashResults({ data }: Props) {
                                         }
                                     }}
                                 >
-                                    <td style={{ padding: '12px', textAlign: 'center', borderRight: '1px solid #e2e8f0' }}>
+                                    <td
+                                        style={{ padding: '12px', textAlign: 'center', borderRight: '1px solid #e2e8f0' }}
+                                        onClick={(e) => e.stopPropagation()}
+                                    >
                                         <input
                                             type="checkbox"
                                             checked={selectedClashes.has(clash.id)}
-                                            onChange={(e) => {
-                                                e.stopPropagation()
-                                                handleClashClick(clash.id)
-                                            }}
+                                            onChange={() => handleClashClick(clash.id)}
+                                            style={{ cursor: 'pointer' }}
                                         />
                                     </td>
                                     <td style={{ padding: '12px', borderRight: '1px solid #e2e8f0' }}>
@@ -836,8 +1002,8 @@ export default function ClashResults({ data }: Props) {
                                                 {clash.a_global_id.slice(-8)}
                                             </div>
                                             {clash.a_building_storey && (
-                                                <div style={{ fontSize: '0.625rem', color: '#059669', fontWeight: '500' }}>
-                                                    🏢 {clash.a_building_storey}
+                                                <div style={{ fontSize: '0.625rem', color: '#059669', fontWeight: '500', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    <Building size={10} /> {clash.a_building_storey}
                                                 </div>
                                             )}
                                         </div>
@@ -863,8 +1029,8 @@ export default function ClashResults({ data }: Props) {
                                                 {clash.b_global_id.slice(-8)}
                                             </div>
                                             {clash.b_building_storey && (
-                                                <div style={{ fontSize: '0.625rem', color: '#059669', fontWeight: '500' }}>
-                                                    🏢 {clash.b_building_storey}
+                                                <div style={{ fontSize: '0.625rem', color: '#059669', fontWeight: '500', display: 'flex', alignItems: 'center', gap: 4 }}>
+                                                    <Building size={10} /> {clash.b_building_storey}
                                                 </div>
                                             )}
                                         </div>
@@ -937,10 +1103,13 @@ export default function ClashResults({ data }: Props) {
                                 border: 'none',
                                 borderRadius: 4,
                                 cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                                fontSize: '0.75rem'
+                                fontSize: '0.75rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
                             }}
                         >
-                            ← Previous
+                            <ArrowLeft size={14} /> Previous
                         </button>
 
                         <span style={{ fontSize: '0.875rem', color: '#374151' }}>
@@ -957,10 +1126,13 @@ export default function ClashResults({ data }: Props) {
                                 border: 'none',
                                 borderRadius: 4,
                                 cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                                fontSize: '0.75rem'
+                                fontSize: '0.75rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 6
                             }}
                         >
-                            Next →
+                            Next <ArrowRight size={14} />
                         </button>
                     </div>
                 )}

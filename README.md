@@ -117,6 +117,49 @@ dev-start.bat
 - Ensure Procfile exists
 - Health check: /api/health
 
+## SaaS-style API (self provisioning)
+You can run clash detection without the UI by posting JSON to the backend. Send IFC files as
+base64 strings alongside your clash settings:
+
+```bash
+curl -X POST http://localhost:5001/api/saas/clash-detection \
+  -H "Content-Type: application/json" \
+  -d '{
+    "files": [
+      {"name": "model.ifc", "content": "$(base64 -w0 path/to/model.ifc)"}
+    ],
+    "clash_sets": [
+      {
+        "name": "MEP vs Structure",
+        "a": [{"file": "model.ifc", "selector": "IfcPipeSegment"}],
+        "b": [{"file": "model.ifc", "selector": "IfcWall"}],
+        "mode": "collision"
+      }
+    ]
+  }'
+```
+
+Response payload:
+
+```json
+{
+  "success": true,
+  "results": [
+    {
+      "name": "MEP vs Structure",
+      "clashes": {
+        "0": {
+          "a_name": "Pipe-01",
+          "b_name": "Wall-12",
+          "distance": 0.0,
+          "severity": "critical"
+        }
+      }
+    }
+  ]
+}
+```
+
 ## Notes
 - ifcopenshell/ifcclash pinned to 0.8.3.post1
 - Python 3.10 recommended for maximum wheel compatibility

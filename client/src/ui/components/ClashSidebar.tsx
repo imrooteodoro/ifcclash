@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react'
+import { Flame, Search, Eye, Ruler, X, ChevronDown, ChevronUp, ArrowUp, ArrowDown } from 'lucide-react'
 
 type ClashData = {
     name: string
@@ -291,13 +292,14 @@ export default function ClashSidebar({ data, onClashSelect, onClearSelection }: 
 
     return (
         <div style={{
-            width: '320px',
+            width: '100%',
+            height: '100%',
             background: '#f8fafc',
             border: '1px solid #e2e8f0',
             borderRadius: 8,
             display: 'flex',
             flexDirection: 'column',
-            maxHeight: '600px',
+            overflow: 'hidden',
             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
         }}>
             {/* Header with Controls */}
@@ -305,7 +307,10 @@ export default function ClashSidebar({ data, onClashSelect, onClearSelection }: 
                 padding: '12px 16px',
                 borderBottom: '1px solid #e2e8f0',
                 background: '#ffffff',
-                borderRadius: '8px 8px 0 0'
+                borderRadius: '8px 8px 0 0',
+                flexShrink: 0,
+                overflow: 'visible',
+                boxSizing: 'border-box'
             }}>
                 <div style={{
                     display: 'flex',
@@ -313,14 +318,17 @@ export default function ClashSidebar({ data, onClashSelect, onClearSelection }: 
                     alignItems: 'center',
                     marginBottom: 12
                 }}>
-                    <h3 style={{
-                        margin: 0,
-                        fontSize: '1rem',
-                        fontWeight: '600',
-                        color: '#1e293b'
-                    }}>
-                        🔥 Clash Navigator
-                    </h3>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Flame size={18} style={{ color: '#ef4444' }} />
+                        <h3 style={{
+                            margin: 0,
+                            fontSize: '1rem',
+                            fontWeight: '600',
+                            color: '#1e293b'
+                        }}>
+                            Clash Navigator
+                        </h3>
+                    </div>
                     <span style={{
                         background: '#ef4444',
                         color: 'white',
@@ -334,37 +342,81 @@ export default function ClashSidebar({ data, onClashSelect, onClearSelection }: 
                 </div>
 
                 {/* Search Bar */}
-                <div style={{ marginBottom: 8 }}>
+                <div style={{ 
+                    marginBottom: 8, 
+                    position: 'relative', 
+                    flexShrink: 0,
+                    width: '100%',
+                    boxSizing: 'border-box'
+                }}>
+                    <Search size={14} style={{ 
+                        position: 'absolute', 
+                        left: 10, 
+                        top: '50%', 
+                        transform: 'translateY(-50%)',
+                        color: '#9ca3af',
+                        zIndex: 1,
+                        pointerEvents: 'none'
+                    }} />
                     <input
                         type="text"
-                        placeholder="🔍 Search elements..."
+                        placeholder="Search elements..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                         style={{
                             width: '100%',
-                            padding: '6px 10px',
+                            padding: '8px 10px 8px 32px',
                             border: '1px solid #d1d5db',
-                            borderRadius: 4,
-                            fontSize: '0.75rem',
-                            outline: 'none'
+                            borderRadius: 6,
+                            fontSize: '0.8125rem',
+                            outline: 'none',
+                            boxSizing: 'border-box',
+                            background: '#ffffff',
+                            transition: 'border-color 0.2s'
+                        }}
+                        onFocus={(e) => {
+                            e.target.style.borderColor = '#3b82f6'
+                        }}
+                        onBlur={(e) => {
+                            e.target.style.borderColor = '#d1d5db'
                         }}
                     />
                 </div>
 
                 {/* Quick Filters */}
-                <div style={{ display: 'flex', gap: 4, marginBottom: 8, flexWrap: 'wrap' }}>
+                <div style={{ 
+                    display: 'flex', 
+                    gap: 4, 
+                    marginBottom: 8, 
+                    flexWrap: 'wrap',
+                    width: '100%',
+                    boxSizing: 'border-box'
+                }}>
                     {(['all', 'critical', 'high', 'medium', 'low'] as const).map(severity => (
                         <button
                             key={severity}
                             onClick={() => setFilterType(severity)}
                             style={{
-                                padding: '2px 6px',
+                                padding: '4px 8px',
                                 background: filterType === severity ? getSeverityColor(severity === 'all' ? 'critical' : severity) : '#f3f4f6',
                                 color: filterType === severity ? 'white' : '#374151',
                                 border: '1px solid #d1d5db',
-                                borderRadius: 3,
-                                fontSize: '0.625rem',
-                                cursor: 'pointer'
+                                borderRadius: 4,
+                                fontSize: '0.6875rem',
+                                fontWeight: '500',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                whiteSpace: 'nowrap'
+                            }}
+                            onMouseEnter={(e) => {
+                                if (filterType !== severity) {
+                                    e.currentTarget.style.background = '#e5e7eb'
+                                }
+                            }}
+                            onMouseLeave={(e) => {
+                                if (filterType !== severity) {
+                                    e.currentTarget.style.background = '#f3f4f6'
+                                }
                             }}
                         >
                             {severity === 'all' ? 'All' : severity.charAt(0).toUpperCase() + severity.slice(1)}
@@ -373,16 +425,28 @@ export default function ClashSidebar({ data, onClashSelect, onClearSelection }: 
                 </div>
 
                 {/* Group Controls */}
-                <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 8 }}>
-                    <span style={{ fontSize: '0.625rem', color: '#6b7280' }}>Group by:</span>
+                <div style={{ 
+                    display: 'flex', 
+                    gap: 6, 
+                    alignItems: 'center', 
+                    marginBottom: 8,
+                    width: '100%',
+                    boxSizing: 'border-box'
+                }}>
+                    <span style={{ fontSize: '0.6875rem', color: '#6b7280', fontWeight: '500' }}>Group by:</span>
                     <select
                         value={groupBy}
                         onChange={(e) => setGroupBy(e.target.value as any)}
                         style={{
-                            padding: '2px 4px',
+                            padding: '4px 8px',
                             border: '1px solid #d1d5db',
-                            borderRadius: 3,
-                            fontSize: '0.625rem'
+                            borderRadius: 4,
+                            fontSize: '0.6875rem',
+                            background: '#ffffff',
+                            cursor: 'pointer',
+                            outline: 'none',
+                            flex: 1,
+                            maxWidth: '150px'
                         }}
                     >
                         <option value="none">None</option>
@@ -418,10 +482,13 @@ export default function ClashSidebar({ data, onClashSelect, onClearSelection }: 
                                 border: 'none',
                                 borderRadius: 3,
                                 fontSize: '0.625rem',
-                                cursor: 'pointer'
+                                cursor: 'pointer',
+                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 4
                             }}
                         >
-                            ✕ Clear
+                            <X size={10} /> Clear
                         </button>
                     </div>
                 )}
@@ -430,7 +497,9 @@ export default function ClashSidebar({ data, onClashSelect, onClearSelection }: 
             {/* Clash Groups */}
             <div style={{
                 flex: 1,
-                overflowY: 'auto'
+                overflowY: 'auto',
+                overflowX: 'hidden',
+                minHeight: 0
             }}>
                 {Object.entries(paginatedClashes).map(([groupName, clashes]) => (
                     <div key={groupName} style={{ borderBottom: '1px solid #e2e8f0' }}>
@@ -511,41 +580,47 @@ export default function ClashSidebar({ data, onClashSelect, onClearSelection }: 
                                                 </div>
 
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation()
-                                                            quickIsolate(clash)
-                                                        }}
-                                                        style={{
-                                                            padding: '2px 4px',
-                                                            background: 'transparent',
-                                                            border: 'none',
-                                                            borderRadius: 3,
-                                                            fontSize: '0.625rem',
-                                                            cursor: 'pointer',
-                                                            color: '#3b82f6'
-                                                        }}
-                                                        title="Quick isolate in 3D"
-                                                    >
-                                                        👁️
-                                                    </button>
-                                                    <button
-                                                        onClick={(e) => {
-                                                            e.stopPropagation()
-                                                            toggleClashExpansion(clash.id)
-                                                        }}
-                                                        style={{
-                                                            padding: '2px 4px',
-                                                            background: 'transparent',
-                                                            border: 'none',
-                                                            borderRadius: 3,
-                                                            fontSize: '0.625rem',
-                                                            cursor: 'pointer',
-                                                            color: '#6b7280'
-                                                        }}
-                                                    >
-                                                        {isExpanded ? '−' : '+'}
-                                                    </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                quickIsolate(clash)
+                                                            }}
+                                                            style={{
+                                                                padding: '2px 4px',
+                                                                background: 'transparent',
+                                                                border: 'none',
+                                                                borderRadius: 3,
+                                                                fontSize: '0.625rem',
+                                                                cursor: 'pointer',
+                                                                color: '#3b82f6',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center'
+                                                            }}
+                                                            title="Quick isolate in 3D"
+                                                        >
+                                                            <Eye size={12} />
+                                                        </button>
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                toggleClashExpansion(clash.id)
+                                                            }}
+                                                            style={{
+                                                                padding: '2px 4px',
+                                                                background: 'transparent',
+                                                                border: 'none',
+                                                                borderRadius: 3,
+                                                                fontSize: '0.625rem',
+                                                                cursor: 'pointer',
+                                                                color: '#6b7280',
+                                                                display: 'flex',
+                                                                alignItems: 'center',
+                                                                justifyContent: 'center'
+                                                            }}
+                                                        >
+                                                            {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                                        </button>
                                                 </div>
                                             </div>
 
@@ -596,9 +671,12 @@ export default function ClashSidebar({ data, onClashSelect, onClearSelection }: 
                                             <div style={{
                                                 fontSize: '0.625rem',
                                                 color: '#6b7280',
-                                                fontWeight: '500'
+                                                fontWeight: '500',
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: 4
                                             }}>
-                                                📏 {clash.distance.toFixed(3)}m
+                                                <Ruler size={10} /> {clash.distance.toFixed(3)}m
                                             </div>
                                         </div>
 
@@ -695,9 +773,34 @@ export default function ClashSidebar({ data, onClashSelect, onClearSelection }: 
                 borderTop: '1px solid #e2e8f0',
                 fontSize: '0.625rem',
                 color: '#9ca3af',
-                textAlign: 'center'
+                textAlign: 'center',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 12,
+                flexWrap: 'wrap'
             }}>
-                Use ↑↓ to navigate, Enter to expand, Esc to clear
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <ArrowUp size={10} /> <ArrowDown size={10} /> navigate
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ 
+                        padding: '2px 4px', 
+                        background: '#f3f4f6', 
+                        borderRadius: 3, 
+                        fontFamily: 'monospace',
+                        fontSize: '0.625rem'
+                    }}>Enter</span> expand
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ 
+                        padding: '2px 4px', 
+                        background: '#f3f4f6', 
+                        borderRadius: 3, 
+                        fontFamily: 'monospace',
+                        fontSize: '0.625rem'
+                    }}>Esc</span> clear
+                </div>
             </div>
         </div>
     )

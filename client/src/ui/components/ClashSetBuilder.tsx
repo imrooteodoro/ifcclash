@@ -1,4 +1,9 @@
 import { useState, useEffect } from 'react'
+import { 
+    Target, Sparkles, Trash2, CheckCircle2, AlertCircle, 
+    Zap, RefreshCw, Ruler, Hand, Search, FileText, 
+    Lightbulb, Copy, X, Plus, ChevronDown, ChevronUp
+} from 'lucide-react'
 
 export type ClashSource = {
     file: string
@@ -356,9 +361,9 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                         <h3 style={{ margin: 0, color: '#1e293b' }}>Select IFC Entity Types</h3>
                         <button
                             onClick={() => setShowEntitySelector(null)}
-                            style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: '#64748b' }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
-                            ×
+                            <X size={24} />
                         </button>
                     </div>
 
@@ -495,7 +500,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                     fontWeight: '500',
                                     border: '1px solid #16a34a'
                                 }}>
-                                    ✅ {appliedPresets.size} preset{appliedPresets.size > 1 ? 's' : ''} active
+                                    <CheckCircle2 size={14} style={{ marginRight: 4 }} /> {appliedPresets.size} preset{appliedPresets.size > 1 ? 's' : ''} active
                                 </div>
                             )}
                         </div>
@@ -511,7 +516,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                 alignItems: 'center',
                                 gap: 8
                             }}>
-                                <span style={{ fontSize: '1rem' }}>✨</span>
+                                <Sparkles size={16} style={{ color: '#f59e0b' }} />
                                 <div>
                                     <div style={{ fontSize: '0.875rem', fontWeight: '500', color: '#92400e' }}>
                                         Preset Applied: {PRESETS[lastAppliedPreset].name}
@@ -534,7 +539,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                 alignItems: 'center',
                                 gap: 8
                             }}>
-                                <span style={{ fontSize: '1rem' }}>🗑️</span>
+                                <Trash2 size={16} style={{ color: '#dc2626' }} />
                                 <div>
                                     <div style={{ fontSize: '0.875rem', fontWeight: '500', color: '#991b1b' }}>
                                         Preset Removed: {PRESETS[lastRemovedPreset].name}
@@ -617,7 +622,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                 boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
                                                 animation: 'pulse 2s infinite'
                                             }}>
-                                                ✨
+                                                <Sparkles size={12} />
                                             </div>
                                         )}
 
@@ -639,7 +644,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                 boxShadow: '0 2px 4px rgba(0, 0, 0, 0.2)',
                                                 animation: 'pulse 2s infinite'
                                             }}>
-                                                🗑️
+                                                <Trash2 size={12} />
                                             </div>
                                         )}
 
@@ -752,7 +757,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                 border: '1px solid #bbf7d0'
                             }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                                    <span style={{ fontSize: '1rem' }}>🎯</span>
+                                    <Target size={16} style={{ color: '#16a34a' }} />
                                     <span style={{ fontSize: '0.875rem', fontWeight: '600', color: '#166534' }}>
                                         Active Presets ({appliedPresets.size})
                                     </span>
@@ -798,7 +803,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                 borderRadius: 8,
                                 border: '2px dashed #e2e8f0'
                             }}>
-                                <div style={{ fontSize: '2rem', marginBottom: 12 }}>📋</div>
+                                <FileText size={32} style={{ color: '#94a3b8', margin: '0 auto 12px' }} />
                                 <h3 style={{ margin: '0 0 8px 0', color: '#374151' }}>No Clash Sets Yet</h3>
                                 <p style={{ margin: 0, fontSize: '0.875rem' }}>
                                     Click "Add Clash Set" to create your first clash detection configuration
@@ -895,21 +900,21 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                         value: 'collision',
                                                         label: 'Collision Detection',
                                                         desc: 'Hard intersection detection',
-                                                        icon: '💥',
+                                                        icon: <Zap size={20} style={{ color: '#dc2626' }} />,
                                                         details: 'Finds elements that physically occupy the same 3D space. Most restrictive but fastest detection method.'
                                                     },
                                                     {
                                                         value: 'intersection',
                                                         label: 'Intersection Analysis',
                                                         desc: 'Tolerance-based detection',
-                                                        icon: '🔄',
+                                                        icon: <RefreshCw size={20} style={{ color: '#ea580c' }} />,
                                                         details: 'Finds elements that cross each other within a specified tolerance distance. Good for MEP routing analysis.'
                                                     },
                                                     {
                                                         value: 'clearance',
                                                         label: 'Clearance Verification',
                                                         desc: 'Minimum spacing requirements',
-                                                        icon: '📏',
+                                                        icon: <Ruler size={20} style={{ color: '#d97706' }} />,
                                                         details: 'Ensures minimum clearance distances between elements. Critical for safety and accessibility compliance.'
                                                     }
                                                 ].map(mode => (
@@ -951,7 +956,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                         />
                                                         <div style={{ flex: 1 }}>
                                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                                                <span style={{ fontSize: '1.25rem' }}>{mode.icon}</span>
+                                                                {mode.icon}
                                                                 <div style={{ fontWeight: '600', color: '#1e293b' }}>{mode.label}</div>
                                                             </div>
                                                             <div style={{ fontSize: '0.875rem', color: '#64748b', marginBottom: 4 }}>{mode.desc}</div>
@@ -990,9 +995,21 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                     border: '1px solid #e2e8f0'
                                                 }}>
                                                     <div style={{ fontSize: '0.875rem', color: '#374151', fontWeight: '500', marginBottom: 4 }}>
-                                                        {cs.mode === 'collision' && '💥 Collision Detection'}
-                                                        {cs.mode === 'intersection' && '🔄 Intersection Detection'}
-                                                        {cs.mode === 'clearance' && '📏 Clearance Analysis'}
+                                                        {cs.mode === 'collision' && (
+                                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                <Zap size={14} /> Collision Detection
+                                                            </span>
+                                                        )}
+                                                        {cs.mode === 'intersection' && (
+                                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                <RefreshCw size={14} /> Intersection Detection
+                                                            </span>
+                                                        )}
+                                                        {cs.mode === 'clearance' && (
+                                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                                <Ruler size={14} /> Clearance Analysis
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
                                                         {cs.mode === 'collision' && 'Finds elements that physically occupy the same 3D space. Best for detecting hard construction conflicts.'}
@@ -1030,7 +1047,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                         {cs.mode === 'collision' && (
                                                             <div style={{ padding: 12, background: 'white', borderRadius: 6, border: '1px solid #e2e8f0' }}>
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                                                    <span style={{ fontSize: '1rem' }}>👆</span>
+                                                                    <Hand size={16} style={{ color: '#3b82f6' }} />
                                                                     <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>Touching Elements</span>
                                                                 </div>
                                                                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -1053,7 +1070,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                         {(cs.mode === 'intersection' || cs.mode === 'clearance') && (
                                                             <div style={{ padding: 12, background: 'white', borderRadius: 6, border: '1px solid #e2e8f0' }}>
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                                                    <span style={{ fontSize: '1rem' }}>📐</span>
+                                                                    <Ruler size={16} style={{ color: '#3b82f6' }} />
                                                                     <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>
                                                                         {cs.mode === 'intersection' ? 'Tolerance Distance' : 'Minimum Clearance'}
                                                                     </span>
@@ -1091,7 +1108,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                         {cs.mode && (
                                                             <div style={{ padding: 12, background: 'white', borderRadius: 6, border: '1px solid #e2e8f0' }}>
                                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                                                    <span style={{ fontSize: '1rem' }}>🔍</span>
+                                                                    <Search size={16} style={{ color: '#3b82f6' }} />
                                                                     <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151' }}>Analysis Scope</span>
                                                                 </div>
                                                                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -1121,7 +1138,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                         border: '1px solid #f59e0b'
                                                     }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                                            <span style={{ fontSize: '1rem' }}>💡</span>
+                                                            <Lightbulb size={16} style={{ color: '#f59e0b' }} />
                                                             <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#92400e' }}>Performance Tip</span>
                                                         </div>
                                                         <div style={{ fontSize: '0.75rem', color: '#92400e' }}>
@@ -1143,7 +1160,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                             border: '1px solid #0ea5e9'
                                         }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                                                <span style={{ fontSize: '1rem' }}>📋</span>
+                                                <FileText size={16} style={{ color: '#0ea5e9' }} />
                                                 <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#0c4a6e' }}>Group Configuration</span>
                                             </div>
                                             <div style={{ fontSize: '0.75rem', color: '#075985', lineHeight: '1.5' }}>
@@ -1214,7 +1231,7 @@ export default function ClashSetBuilder({ files, value, onChange }: Props) {
                                                                         fontSize: '0.75rem'
                                                                     }}
                                                                 >
-                                                                    ×
+                                                                    <X size={14} />
                                                                 </button>
                                                             </div>
 

@@ -119,9 +119,13 @@ def start_frontend():
                 print_error(result.stderr)
                 return None
 
+        env = os.environ.copy()
+        env['VITE_API_BASE'] = 'http://localhost:5001'
+        
         process = subprocess.Popen(
             ["npm", "run", "dev"],
             cwd=client_dir,
+            env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True

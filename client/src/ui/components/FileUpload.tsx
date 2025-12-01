@@ -1,4 +1,5 @@
 import React, { useCallback, useState } from 'react'
+import { Upload as UploadIcon, FileText, Building2, Wrench, Landmark, X, Lightbulb, BarChart3, Download } from 'lucide-react'
 
 type Props = { files: File[]; onFilesChange: (files: File[]) => void }
 
@@ -49,16 +50,18 @@ export default function FileUpload({ files, onFilesChange }: Props) {
     }
 
     const getFileIcon = (fileName: string) => {
-        if (fileName.toLowerCase().includes('structural')) return '🏗️'
-        if (fileName.toLowerCase().includes('mep') || fileName.toLowerCase().includes('mechanical')) return '🔧'
-        if (fileName.toLowerCase().includes('architectural') || fileName.toLowerCase().includes('archi')) return '🏛️'
-        return '📄'
+        const iconSize = 20
+        const iconStyle = { width: iconSize, height: iconSize, color: '#3b82f6' }
+        if (fileName.toLowerCase().includes('structural')) return <Building2 style={iconStyle} />
+        if (fileName.toLowerCase().includes('mep') || fileName.toLowerCase().includes('mechanical')) return <Wrench style={iconStyle} />
+        if (fileName.toLowerCase().includes('architectural') || fileName.toLowerCase().includes('archi')) return <Landmark style={iconStyle} />
+        return <FileText style={iconStyle} />
     }
 
     return (
         <div style={{ padding: 20, background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-                <span style={{ fontSize: '1.25rem' }}>📁</span>
+                <UploadIcon size={24} style={{ color: '#3b82f6' }} />
                 <h3 style={{ margin: 0, color: '#1e293b', fontSize: '1.25rem' }}>IFC File Upload</h3>
                 <span style={{
                     background: '#dbeafe',
@@ -89,8 +92,12 @@ export default function FileUpload({ files, onFilesChange }: Props) {
                 }}
                 onClick={() => document.getElementById('file-input')?.click()}
             >
-                <div style={{ fontSize: '3rem', marginBottom: 12 }}>
-                    {isDragOver ? '📥' : '📤'}
+                <div style={{ marginBottom: 12, display: 'flex', justifyContent: 'center' }}>
+                    {isDragOver ? (
+                        <Download size={48} style={{ color: '#3b82f6' }} />
+                    ) : (
+                        <UploadIcon size={48} style={{ color: '#94a3b8' }} />
+                    )}
                 </div>
                 <div style={{ fontSize: '1rem', fontWeight: '500', color: '#374151', marginBottom: 8 }}>
                     {isDragOver ? 'Drop IFC files here' : 'Drag & drop IFC files here'}
@@ -170,11 +177,14 @@ export default function FileUpload({ files, onFilesChange }: Props) {
                                             borderRadius: 4,
                                             cursor: 'pointer',
                                             fontSize: '0.75rem',
-                                            color: '#374151'
+                                            color: '#374151',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center'
                                         }}
                                         title="Remove file"
                                     >
-                                        ✕
+                                        <X size={14} />
                                     </button>
                                 </div>
                             </div>
@@ -187,10 +197,14 @@ export default function FileUpload({ files, onFilesChange }: Props) {
                         padding: 12,
                         background: '#e0f2fe',
                         borderRadius: 6,
-                        border: '1px solid #0277bd'
+                        border: '1px solid #0277bd',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8
                     }}>
+                        <BarChart3 size={16} style={{ color: '#0277bd', flexShrink: 0 }} />
                         <div style={{ fontSize: '0.875rem', color: '#0277bd', fontWeight: '500' }}>
-                            📊 Summary: {files.length} IFC file{files.length === 1 ? '' : 's'} ready for analysis
+                            Summary: {files.length} IFC file{files.length === 1 ? '' : 's'} ready for analysis
                             <span style={{ marginLeft: 8, fontSize: '0.75rem', color: '#01579b' }}>
                                 ({formatFileSize(files.reduce((sum, f) => sum + f.size, 0))} total)
                             </span>
@@ -208,7 +222,7 @@ export default function FileUpload({ files, onFilesChange }: Props) {
                 border: '1px solid #0ea5e9'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontSize: '1rem' }}>💡</span>
+                    <Lightbulb size={16} style={{ color: '#0ea5e9', flexShrink: 0 }} />
                     <span style={{ fontSize: '0.875rem', fontWeight: '500', color: '#0c4a6e' }}>Supported Formats</span>
                 </div>
                 <div style={{ fontSize: '0.75rem', color: '#075985' }}>

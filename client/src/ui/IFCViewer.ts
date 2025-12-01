@@ -211,11 +211,14 @@ export class IFCViewer {
         const containerWidth = this.container.clientWidth || 800;
         const containerHeight = this.container.clientHeight || 600;
 
+        // Don't resize if container has zero dimensions (e.g., display: none)
+        if (containerWidth === 0 || containerHeight === 0) {
+            return;
+        }
+
         this.camera.aspect = containerWidth / containerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(containerWidth, containerHeight);
-
-
     }
 
     public resize(): void {
@@ -452,7 +455,6 @@ export class IFCViewer {
             const panSpeed = 5;
             const rotateSpeed = 0.05;
 
-            const target = this.getControlsTarget();
             const delta = this.clock.getDelta();
 
             switch (event.code) {
@@ -809,9 +811,6 @@ export class IFCViewer {
     }
 
     private setupViewCube(): void {
-        console.log('[IFCViewer] Setting up ViewCube');
-        console.log('[IFCViewer] Renderer DOM element parent:', this.renderer.domElement.parentElement);
-        console.log('[IFCViewer] Container:', this.container);
 
         // Create view cube directly on the renderer's DOM element (3D canvas)
         this.viewCube = new ViewCube(this.renderer.domElement.parentElement || this.container, this.camera, this.controls, this, {
@@ -890,11 +889,6 @@ export class IFCViewer {
         this.controls.getTarget(target);
         return target;
     }
-
-    private setControlsTarget(x: number, y: number, z: number, enableTransition: boolean = false): void {
-        this.controls.setTarget(x, y, z, enableTransition);
-    }
-
 
 
     public setSectionBox(bbox: THREE.Box3 | null): void {
@@ -975,10 +969,7 @@ export class IFCViewer {
         }
 
         const size = bbox.getSize(new THREE.Vector3());
-        const center = bbox.getCenter(new THREE.Vector3());
         const minSize = 0.001; // Minimum size threshold
-
-        console.log(`[IFCViewer] zoomToBox - Box size: [${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}], Center: [${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}]`);
 
         if (size.x < minSize && size.y < minSize && size.z < minSize) {
             console.warn('[IFCViewer] Bounding box too small to zoom');
@@ -1003,8 +994,6 @@ export class IFCViewer {
         // Ensure camera updates after transition
         const delta = this.clock.getDelta();
         this.controls.update(delta);
-
-        console.log(`[IFCViewer] fitToBox complete with cover:true - distance: ${this.controls.distance.toFixed(2)}`);
     }
 
     private async zoomToClashPoints(clashPoints: [number, number, number][], targets: THREE.Object3D[]): Promise<void> {
@@ -1052,9 +1041,6 @@ export class IFCViewer {
             return;
         }
 
-        const size = clashBounds.getSize(new THREE.Vector3());
-        const center = clashBounds.getCenter(new THREE.Vector3());
-
         // CRITICAL: Set viewport to match renderer size for accurate fitToBox calculation
         const containerWidth = this.container.clientWidth || 800;
         const containerHeight = this.container.clientHeight || 600;
@@ -1072,8 +1058,6 @@ export class IFCViewer {
         // Ensure camera updates after transition
         const delta = this.clock.getDelta();
         this.controls.update(delta);
-
-        console.log(`[IFCViewer] Centered on ${clashPoints.length} clashes at [${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}], distance: ${this.controls.distance.toFixed(2)}`);
     }
 
     private async zoomToClashPoint(clashPoint: [number, number, number], targets: THREE.Object3D[]): Promise<void> {
@@ -1110,9 +1094,6 @@ export class IFCViewer {
                 hasObjects = true;
             }
         }
-
-        const size = boundingBox.getSize(new THREE.Vector3());
-        console.log(`[IFCViewer] Calculated bounding box for ${targets.length} targets - Size: [${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}]`);
 
         // Ensure the clash point is included
         const focusPoint = new THREE.Vector3(clashPoint[0], clashPoint[1], clashPoint[2]);
@@ -1159,8 +1140,6 @@ export class IFCViewer {
         // Ensure camera updates after transition
         const delta = this.clock.getDelta();
         this.controls.update(delta);
-
-        console.log(`[IFCViewer] Fitted to clash at [${focusPoint.x.toFixed(2)}, ${focusPoint.y.toFixed(2)}, ${focusPoint.z.toFixed(2)}], distance: ${this.controls.distance.toFixed(2)}`);
     }
 
 
@@ -1325,10 +1304,6 @@ export class IFCViewer {
             console.warn('[IFCViewer] Cannot zoom to fit - bounding box is empty');
             return;
         }
-
-        const size = box.getSize(new THREE.Vector3());
-        const center = box.getCenter(new THREE.Vector3());
-        console.log(`[IFCViewer] Zoom to fit - Box size: [${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)}], Center: [${center.x.toFixed(2)}, ${center.y.toFixed(2)}, ${center.z.toFixed(2)}]`);
 
         this.zoomToBox(box);
     }
@@ -1603,7 +1578,77 @@ export class IFCViewer {
         this.controls.update(delta);
     }
 
+    /**
+     * Capture a screenshot of the current 3D view
+     * @returns Base64 encoded PNG data URL
+     */
+    public captureScreenshot(): string {
+        // Force render before capture
+        this.renderer.render(this.scene, this.camera);
+        return this.renderer.domElement.toDataURL('image/png');
+    }
 
+    /**
+     * Zoom to a clash and capture a screenshot
+     * @param guids The GlobalIds of the clashing elements
+     * @param focusPoints The clash points to focus on
+     * @returns Promise with base64 PNG data
+     */
+    public async zoomToClashAndCapture(
+        guids: string[],
+        focusPoints: [number, number, number][]
+    ): Promise<string> {
+        return new Promise((resolve) => {
+            // Isolate and zoom to the clash
+            this.isolateByGuids(guids, { zoom: true, focusPoints });
+
+            // Wait for zoom animation to complete (adjust delay as needed)
+            setTimeout(() => {
+                // Force a render update
+                this.renderer.render(this.scene, this.camera);
+
+                // Capture screenshot
+                const screenshot = this.renderer.domElement.toDataURL('image/png');
+                resolve(screenshot);
+            }, 600); // 600ms to allow zoom animation to complete
+        });
+    }
+
+    /**
+     * Capture screenshots for multiple clashes
+     * @param clashes Array of clash objects with guids and points
+     * @param onProgress Optional callback for progress updates
+     * @returns Promise with array of {clashId, screenshot} objects
+     */
+    public async captureClashScreenshots(
+        clashes: Array<{
+            id: string;
+            a_global_id: string;
+            b_global_id: string;
+            p1: [number, number, number];
+        }>,
+        onProgress?: (current: number, total: number) => void
+    ): Promise<Array<{ clashId: string; screenshot: string }>> {
+        const results: Array<{ clashId: string; screenshot: string }> = [];
+
+        for (let i = 0; i < clashes.length; i++) {
+            const clash = clashes[i];
+            const guids = [clash.a_global_id, clash.b_global_id].filter(Boolean);
+            const focusPoints: [number, number, number][] = [clash.p1];
+
+            const screenshot = await this.zoomToClashAndCapture(guids, focusPoints);
+            results.push({ clashId: clash.id, screenshot });
+
+            if (onProgress) {
+                onProgress(i + 1, clashes.length);
+            }
+        }
+
+        // Restore view after capturing all screenshots
+        this.clearClashIsolation();
+
+        return results;
+    }
 }
 
 // Note: IFCViewer is now initialized by React in App.tsx

@@ -6,4 +6,7 @@ ifcclash==0.8.3
 numpy==1.24.3
 python-multipart==0.0.6
 werkzeug==2.3.7
+Flask-Limiter==3.5.0
+bcf-client>=0.8.4
+Pillow>=10.0.0
 

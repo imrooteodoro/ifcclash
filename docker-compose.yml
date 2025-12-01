@@ -1,0 +1,12 @@
+services:
+  web:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./api:/app/api
+      - ./static:/app/static
+    environment:
+      - FLASK_DEBUG=1
+      - PORT=8080
+    command: python api/app.py
