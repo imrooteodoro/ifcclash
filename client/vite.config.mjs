@@ -1,7 +1,6 @@
-import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-export default defineConfig({
+export default {
     plugins: [react()],
     build: {
         outDir: '../static',
@@ -14,7 +13,7 @@ export default defineConfig({
         },
         proxy: {
             '/api': {
-                target: 'http://localhost:8080',
+                target: 'http://localhost:9292',
                 changeOrigin: true,
                 secure: false
             }
@@ -24,5 +23,4 @@ export default defineConfig({
         exclude: ['web-ifc']
     },
     publicDir: 'public'
-})
-
+}
