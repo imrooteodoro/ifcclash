@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback } from 'react'
 import { Flame, BarChart3, Filter, Search, Building2, Building, Zap, AlertTriangle, Ruler, ArrowUpDown, Trash2, Eye, X, Download, ArrowLeft, ArrowRight, Camera } from 'lucide-react'
-import type { IFCViewer } from '../IFCViewer'
+import type { IfcJsViewerHandle } from '../IfcJsViewer'
 
 const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ((import.meta as any).env.DEV ? '' : '') // Empty string uses Vite proxy in dev, or relative paths in production
 
@@ -28,7 +28,7 @@ type ClashData = {
 type Props = {
     data: ClashData | null
     onSwitchToViewer?: () => void
-    viewer?: IFCViewer | null
+    viewer?: IfcJsViewerHandle | null
 }
 
 type FilterState = {
@@ -381,7 +381,7 @@ export default function ClashResults({ data, onSwitchToViewer, viewer }: Props) 
             let screenshots: Record<string, string> = {}
 
             // Capture screenshots if viewer is available and user wants them
-            if (includeScreenshots && viewer) {
+            if (includeScreenshots && viewer?.captureClashScreenshots) {
                 setIsCapturingScreenshots(true)
                 setCaptureProgress({ current: 0, total: clashesToExport.length })
 
@@ -558,7 +558,7 @@ export default function ClashResults({ data, onSwitchToViewer, viewer }: Props) 
                                 ? `Export BCF (${selectedClashes.size})`
                                 : 'Export BCF'}
                         </button>
-                        {viewer && (
+                        {viewer?.captureClashScreenshots && (
                             <button
                                 onClick={() => exportBCF(true)}
                                 disabled={(selectedClashes.size === 0 && filteredClashes.length === 0) || isCapturingScreenshots}

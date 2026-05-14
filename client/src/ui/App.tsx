@@ -10,15 +10,15 @@ import ClashResults from './components/ClashResultsNew'
 import ClashSetBuilder, { ClashSet } from './components/ClashSetBuilder'
 import ClashSidebar from './components/ClashSidebar'
 import FileUpload from './components/FileUpload'
-import { IFCViewer } from './IFCViewer'
+import IfcJsViewer, { IfcJsViewerHandle, ModelLayer } from './IfcJsViewer'
+import ModelLayersPanel from './components/ModelLayersPanel'
 
 const apiBase = (import.meta as any).env?.VITE_API_BASE?.replace(/\/$/, '') || ((import.meta as any).env.DEV ? '' : '') // Empty string uses Vite proxy in dev, or relative paths in production
 
 export default function App() {
     const [activeTab, setActiveTab] = useState('upload' as 'upload' | 'configure' | 'results' | 'viewer')
     const [showClashViewer, setShowClashViewer] = useState(false)
-    const viewerRef = useRef<HTMLDivElement>(null)
-    const ifcViewerRef = useRef<IFCViewer | null>(null)
+    const ifcViewerRef = useRef<IfcJsViewerHandle | null>(null)
 
     const [files, setFiles] = useState([] as File[])
     const [setsText, setSetsText] = useState('')
@@ -27,30 +27,8 @@ export default function App() {
     const [error, setError] = useState(null as string | null)
     const [isRunning, setIsRunning] = useState(false)
     const [progress, setProgress] = useState(null as { stage: string; progress: number } | null)
-    const [loadedToViewer, setLoadedToViewer] = useState(new Set<string>())
+    const [layers, setLayers] = useState([] as ModelLayer[])
     const appSectionRef = useRef<HTMLDivElement>(null)
-
-
-
-    // Initialize IFCViewer manually
-    const initializeViewer = useCallback(() => {
-        if (viewerRef.current && !ifcViewerRef.current) {
-            const width = viewerRef.current.clientWidth;
-            const height = viewerRef.current.clientHeight;
-
-            if (width > 0 && height > 0) {
-                ifcViewerRef.current = new IFCViewer(viewerRef.current);
-                // Force a resize after initialization
-                setTimeout(() => {
-                    if (ifcViewerRef.current && typeof ifcViewerRef.current.resize === 'function') {
-                        ifcViewerRef.current.resize();
-                    }
-                }, 100);
-                return true;
-            }
-        }
-        return false;
-    }, [])
 
     const run = useCallback(async () => {
         if (!files.length) return
@@ -129,50 +107,6 @@ export default function App() {
         }
     }, [])
 
-    const loadIFCToViewer = useCallback(async (file: File) => {
-        // Initialize viewer if not already done
-        if (!ifcViewerRef.current) {
-            const initialized = initializeViewer();
-            if (!initialized) {
-                return;
-            }
-        }
-
-        if (ifcViewerRef.current && !loadedToViewer.has(file.name)) {
-            await ifcViewerRef.current.loadIFC(file);
-            setLoadedToViewer(prev => new Set(prev).add(file.name));
-        }
-    }, [initializeViewer, loadedToViewer])
-
-    // Auto-load new IFC files to viewer when viewer tab is active
-    useEffect(() => {
-        if (files.length > 0 && activeTab === 'viewer') {
-            // Initialize viewer if not already done
-            if (!ifcViewerRef.current) {
-                // Use requestAnimationFrame to ensure DOM is rendered
-                requestAnimationFrame(() => {
-                    if (!ifcViewerRef.current) {
-                        const initialized = initializeViewer();
-                        if (initialized) {
-                            // Load files after successful initialization
-                            files.forEach(file => {
-                                if (!loadedToViewer.has(file.name)) {
-                                    loadIFCToViewer(file);
-                                }
-                            });
-                        }
-                    }
-                });
-            } else {
-                // Viewer exists, just load any new files
-                files.forEach(file => {
-                    if (!loadedToViewer.has(file.name)) {
-                        loadIFCToViewer(file);
-                    }
-                });
-            }
-        }
-    }, [files, activeTab, initializeViewer, loadIFCToViewer, loadedToViewer])
 
     // Clash viewer handlers
     const handleClashSelect = useCallback((_clashIds: string[], guids: string[], clashPoints?: [number, number, number][]) => {
@@ -189,83 +123,20 @@ export default function App() {
 
     // Refresh viewer when returning to viewer tab
     useEffect(() => {
-        if (activeTab === 'viewer') {
-            // Restore showClashViewer if we have results but it was turned off
-            if (result && !showClashViewer) {
-                const clashArray = result?.results || result;
-                const hasClashes = Array.isArray(clashArray) && clashArray.length > 0;
-                if (hasClashes) {
-                    setShowClashViewer(true);
-                }
+        if (activeTab !== 'viewer') return
+
+        if (result && !showClashViewer) {
+            const clashArray = result?.results || result
+            const hasClashes = Array.isArray(clashArray) && clashArray.length > 0
+            if (hasClashes) {
+                setShowClashViewer(true)
             }
-            
-            // Use double requestAnimationFrame to ensure DOM is fully rendered and visible
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    if (ifcViewerRef.current && viewerRef.current) {
-                        // Ensure container is visible and has dimensions
-                        const container = viewerRef.current;
-                        
-                        // Function to restore viewer when container is ready
-                        const restoreViewer = () => {
-                            if (!ifcViewerRef.current || !viewerRef.current) return;
-                            
-                            const container = viewerRef.current;
-                            const width = container.clientWidth;
-                            const height = container.clientHeight;
-                            
-                            // Only resize if container has valid dimensions
-                            if (width > 0 && height > 0) {
-                                // Resize renderer to match container dimensions (critical after tab switch)
-                                ifcViewerRef.current.resize();
-                                
-                                // Force a render to ensure everything is visible
-                                // Note: Don't clear clash isolation here - it would reset the zoom
-                                if (typeof ifcViewerRef.current.refreshViewer === 'function') {
-                                    ifcViewerRef.current.refreshViewer();
-                                }
-                                return true;
-                            }
-                            return false;
-                        };
-                        
-                        if (container.clientWidth === 0 || container.clientHeight === 0) {
-                            // Container not ready, wait for it to become visible
-                            // Try multiple times with increasing delays
-                            let restored = false;
-                            const attempts = [50, 100, 200, 300, 500];
-                            attempts.forEach((delay) => {
-                                setTimeout(() => {
-                                    if (!restored && ifcViewerRef.current && viewerRef.current) {
-                                        const container = viewerRef.current;
-                                        if (container.clientWidth > 0 && container.clientHeight > 0) {
-                                            restored = restoreViewer();
-                                        }
-                                    }
-                                }, delay);
-                            });
-                        } else {
-                            // Container is ready, restore immediately
-                            restoreViewer();
-                        }
-                    } else if (files.length > 0) {
-                        // Viewer not initialized yet, but we have files - initialize it
-                        requestAnimationFrame(() => {
-                            const initialized = initializeViewer();
-                            if (initialized) {
-                                // Load files after successful initialization
-                                files.forEach(file => {
-                                    if (!loadedToViewer.has(file.name)) {
-                                        loadIFCToViewer(file);
-                                    }
-                                });
-                            }
-                        });
-                    }
-                });
-            });
         }
-    }, [activeTab, files, initializeViewer, loadIFCToViewer, loadedToViewer, result, showClashViewer])
+
+        requestAnimationFrame(() => {
+            ifcViewerRef.current?.resize()
+        })
+    }, [activeTab, result, showClashViewer])
 
     // Listen for clash selection changes from ClashResults component
     useEffect(() => {
@@ -1257,8 +1128,6 @@ export default function App() {
 
                                     {/* Viewer container - SINGLE instance, always rendered */}
                                     <div
-                                        id="viewer-container"
-                                        ref={viewerRef}
                                         style={{
                                             flex: 1,
                                             border: '2px solid #e2e8f0',
@@ -1269,7 +1138,14 @@ export default function App() {
                                             overflow: 'hidden',
                                             position: 'relative'
                                         }}
-                                    />
+                                    >
+                                        <IfcJsViewer ref={ifcViewerRef} files={files} active={activeTab === 'viewer'} onLayersChange={setLayers} />
+                                        <ModelLayersPanel
+                                            layers={layers}
+                                            onVisibilityChange={(id, v) => ifcViewerRef.current?.setLayerVisibility(id, v)}
+                                            onOpacityChange={(id, o) => ifcViewerRef.current?.setLayerOpacity(id, o)}
+                                        />
+                                    </div>
                                 </div>
                             </div>
 

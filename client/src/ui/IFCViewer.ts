@@ -39,6 +39,7 @@ export class IFCViewer {
     private currentZoomAnimation: number | null = null;
     private initialCameraPosition: THREE.Vector3 | null = null;
     private initialCameraTarget: THREE.Vector3 | null = null;
+    public readonly ready: Promise<void>;
 
 
 
@@ -91,7 +92,7 @@ export class IFCViewer {
         this.container.appendChild(this.pdfPreviewWindow);
 
         // Start initialization
-        this.init();
+        this.ready = this.init();
     }
 
     private showLoading(): void {
@@ -108,10 +109,9 @@ export class IFCViewer {
 
     private async init(): Promise<void> {
         if (document.readyState === "loading") {
-            document.addEventListener("DOMContentLoaded", () => this.setup());
-        } else {
-            await this.setup();
+            await new Promise<void>(resolve => document.addEventListener("DOMContentLoaded", () => resolve(), { once: true }));
         }
+        await this.setup();
     }
 
     private async setup(): Promise<void> {
@@ -363,10 +363,11 @@ export class IFCViewer {
             const guid = this.extractGuid(line);
 
             if (guid) {
-                elementGroup.userData.guid = guid;
-                const arr = this.guidIndex.get(guid) || [];
+                const normalizedGuid = this.normalizeGuid(guid);
+                elementGroup.userData.guid = normalizedGuid;
+                const arr = this.guidIndex.get(normalizedGuid) || [];
                 arr.push(elementGroup);
-                this.guidIndex.set(guid, arr);
+                this.guidIndex.set(normalizedGuid, arr);
 
             } else {
                 console.warn(`No GUID found for element ${expressID}`);
@@ -383,7 +384,12 @@ export class IFCViewer {
         if (!raw) return null;
         if (typeof raw === "string") return raw;
         if (typeof raw?.value === "string") return raw.value;
+        if (typeof raw?.value?.value === "string") return raw.value.value;
         return null;
+    }
+
+    private normalizeGuid(guid: string): string {
+        return guid.replace(/[{}]/g, "").trim().toLowerCase();
     }
 
     private getBufferGeometry(
@@ -865,6 +871,25 @@ export class IFCViewer {
     // Add these getter methods to the IFCViewer class
     public getModels(): Map<number, IFCModel> {
         return this.models;
+    }
+
+    public setModelVisibility(modelId: number, visible: boolean): void {
+        const model = this.models.get(modelId)
+        if (model) model.visible = visible
+    }
+
+    public setModelOpacity(modelId: number, opacity: number): void {
+        const model = this.models.get(modelId)
+        if (!model) return
+        model.traverse((obj) => {
+            const mesh = obj as THREE.Mesh
+            if (!mesh.isMesh) return
+            const mat = mesh.material as THREE.MeshPhongMaterial
+            if (!mat) return
+            mat.opacity = opacity
+            mat.transparent = opacity < 1
+            mat.needsUpdate = true
+        })
     }
 
     public getCamera(): THREE.Camera {
@@ -1427,7 +1452,7 @@ export class IFCViewer {
         const targets: THREE.Object3D[] = [];
         const missing: string[] = [];
 
-        const uniq = new Set(guids.filter(Boolean));
+        const uniq = new Set(guids.filter(Boolean).map((guid) => this.normalizeGuid(guid)));
         this.lastIsolatedGuids = uniq;
 
         uniq.forEach((g) => {
